@@ -1,15 +1,20 @@
 """
-Bounce Scalper - Backtest Futtatás (Riport Exportálással)
-=========================================================
+Bounce Scalper - Backtest Futtatás (MongoDB Integrációval)
+==========================================================
 
 Futtatás:
     cd /Users/kuligabor/git/kebo-trade-wrapper/kebo-trade
     python run/run_backtest.py
 
+MongoDB:
+    - Alapértelmezetten KIKAPCSOLVA backtest módban
+    - Bekapcsolható: export MONGODB_ENABLED="true"
+
 Eredmények:
     backtest_results/ mappába exportálja a riportokat
 """
 
+import asyncio
 import time
 from datetime import datetime, UTC
 from decimal import Decimal
@@ -32,9 +37,12 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Currency, Money, Price, Quantity
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 
+import os
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from persistence.config import MongoDBConfig
+from persistence.publisher import MongoDBPublisher
 from strategies.bounce_scalper import BounceScalper
 from strategies.bounce_scalper_config import BounceScalperConfig
 
@@ -63,22 +71,26 @@ TIMEFRAME = "5m"
 
 # Párok
 SYMBOLS = [
-    "BTC/USDC",
-    "ETH/USDC",
+    #"BTC/USDC",
+    #"ETH/USDC",
     "SOL/USDC",
     "ARB/USDC",
-    "TIA/USDC",
-    "ADA/USDC",
-    "AVAX/USDC",
-    "DOGE/USDC",
+    #"TIA/USDC",
+    #"ADA/USDC",
+    #"AVAX/USDC",
+    #"DOGE/USDC",
 ]
 
 # Backtest időszak (a fájlnevekből)
-START_DATE = "20250101"
+START_DATE = "20251101"
 END_DATE = "20260221"
 
 # Kezdő egyenleg
 STARTING_USDC = 1000.0
+
+# Stratégia azonosító
+STRATEGY_TYPE = "bounce_scalper"
+STRATEGY_ID = "bounce_scalper_backtest_001"
 
 
 # ============================================================================
@@ -256,11 +268,38 @@ def load_bars(
 # MAIN
 # ============================================================================
 
-def run_backtest():
-    """Backtest futtatása riport exportálással."""
+async def run_backtest_async():
+    """Backtest futtatása MongoDB integrációval (opcionális)."""
     print("=" * 70)
     print("BOUNCE SCALPER - BACKTEST")
     print("=" * 70)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MONGODB SETUP (alapértelmezetten kikapcsolva backtest-nél)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # Backtest-nél alapértelmezetten kikapcsoljuk a MongoDB-t
+    # Ha mégis kell, állítsd be: MONGODB_ENABLED=true
+    mongo_enabled = os.environ.get("MONGODB_ENABLED", "true").lower() == "true"
+
+    publisher = None
+    if mongo_enabled:
+        mongo_config = MongoDBConfig(enabled=True)
+        publisher = MongoDBPublisher(
+            config=mongo_config,
+            strategy_type=STRATEGY_TYPE,
+            strategy_id=STRATEGY_ID,
+            is_backtest=True,
+        )
+        await publisher.start()
+        print(f"\nMongoDB: enabled (backtest mode)")
+        print(f"  Session: {publisher.session_id[:8]}...")
+    else:
+        print(f"\nMongoDB: disabled (set MONGODB_ENABLED=true to enable)")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # ENGINE SETUP
+    # ═══════════════════════════════════════════════════════════════════════
 
     # Engine létrehozása
     engine = BacktestEngine(
@@ -358,6 +397,11 @@ def run_backtest():
 
     # Stratégia hozzáadása
     strategy = BounceScalper(config=config)
+
+    # MongoDB persistence beállítása (ha engedélyezve van)
+    if publisher:
+        strategy.set_persistence(publisher)
+
     engine.add_strategy(strategy)
 
     # Backtest futtatása
@@ -370,12 +414,24 @@ def run_backtest():
     print("\n6. Riportok exportálása...")
     save_strategy_reports(engine, config, RESULTS_DIR)
 
+    # MongoDB leállítása
+    if publisher:
+        await publisher.stop(
+            reason="NORMAL",
+            state_snapshot=strategy.on_save(),
+        )
+
     # Cleanup
     engine.dispose()
 
     print("\n" + "=" * 70)
     print("BACKTEST BEFEJEZVE")
     print("=" * 70)
+
+
+def run_backtest():
+    """Szinkron wrapper a backtest futtatásához."""
+    asyncio.run(run_backtest_async())
 
 
 if __name__ == "__main__":

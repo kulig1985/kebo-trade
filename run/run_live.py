@@ -1,6 +1,6 @@
 """
-Bounce Scalper - Live Trading
-=============================
+Bounce Scalper - Live Trading (MongoDB Integrációval)
+=====================================================
 
 FIGYELEM: Ez VALÓS pénzzel kereskedik!
 Először MINDIG tesztelj TESTNET-en!
@@ -19,9 +19,15 @@ Futtatás:
     # LIVE futtatás (FIGYELEM: VALÓS PÉNZ!)
     export BINANCE_TESTNET="false"
     python run/run_live.py
+
+MongoDB:
+    - Automatikusan csatlakozik (MONGODB_URI env var vagy alapértelmezett)
+    - Kikapcsolható: export MONGODB_ENABLED="false"
 """
 
+import asyncio
 import os
+import signal
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -32,12 +38,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig, BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory, BinanceLiveExecClientFactory
-from nautilus_trader.config import InstrumentProviderConfig, LoggingConfig, TradingNodeConfig
+from nautilus_trader.config import InstrumentProviderConfig, LiveExecEngineConfig, LoggingConfig, TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarSpecification, BarType
 from nautilus_trader.model.enums import AggregationSource, BarAggregation, PriceType
 from nautilus_trader.model.identifiers import InstrumentId, TraderId
 
+from persistence.config import MongoDBConfig
+from persistence.publisher import MongoDBPublisher
+from persistence.sync import MongoDBSyncService
 from strategies.bounce_scalper import BounceScalper
 from strategies.bounce_scalper_config import BounceScalperConfig
 
@@ -70,11 +79,15 @@ EXIT_ATR_MULT = None                    # Nincs exit band, csak TP/SL
 MIN_FREE_BALANCE = Decimal("10.0")      # Minimum szabad egyenleg
 COOLDOWN_BARS = 10                      # Gyors újra belépés
 
+# Stratégia azonosító
+STRATEGY_TYPE = "bounce_scalper"
+STRATEGY_ID = "bounce_scalper_live_001"
 
-def main():
-    """Live trading indítása."""
+
+async def run_with_mongodb():
+    """Live trading indítása MongoDB integrációval."""
     print("=" * 70)
-    print("BOUNCE SCALPER - LIVE TRADING")
+    print("BOUNCE SCALPER - LIVE TRADING (MongoDB)")
     print("=" * 70)
 
     # API kulcsok ellenőrzése
@@ -104,12 +117,42 @@ def main():
             print("Megszakítva.")
             return
 
-    # TradingNode konfiguráció
+    # ═══════════════════════════════════════════════════════════════════════
+    # MONGODB SETUP
+    # ═══════════════════════════════════════════════════════════════════════
+    mongo_config = MongoDBConfig()
+    publisher = MongoDBPublisher(
+        config=mongo_config,
+        strategy_type=STRATEGY_TYPE,
+        strategy_id=STRATEGY_ID,
+        is_backtest=False,
+    )
+
+    print(f"\nMongoDB: {'enabled' if mongo_config.enabled else 'disabled'}")
+    if mongo_config.enabled:
+        print(f"  Database: {mongo_config.database_name}")
+        print(f"  Session: {publisher.session_id[:8]}...")
+
+    # MongoDB indítása
+    await publisher.start()
+
+    # Sync service (startup sync-hez)
+    sync_service = MongoDBSyncService(db=publisher.db)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # TRADING NODE SETUP
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # TradingNode konfiguráció - RECONCILIATION ENABLED
     node_config = TradingNodeConfig(
         trader_id=TraderId("BOUNCE-LIVE-001"),
         logging=LoggingConfig(
             log_level="INFO",
             log_colors=True,
+        ),
+        exec_engine=LiveExecEngineConfig(
+            reconciliation=True,
+            reconciliation_lookback_mins=60,
         ),
         data_clients={
             "BINANCE": BinanceDataClientConfig(
@@ -174,7 +217,51 @@ def main():
 
     # Stratégia hozzáadása
     strategy = BounceScalper(config=config)
+
+    # MongoDB persistence beállítása
+    strategy.set_persistence(publisher)
+
     node.trader.add_strategy(strategy)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # STARTUP SYNC (MongoDB ↔ NautilusTrader)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # FONTOS: Ez MIUTÁN a NautilusTrader reconciliation lefutott
+    # A node.build() elindítja a reconciliation-t
+    print("\n" + "=" * 70)
+    print("STARTUP SYNC")
+    print("=" * 70)
+
+    sync_stats = await sync_service.sync_on_startup(
+        cache=node.trader.cache,
+        strategy_id=STRATEGY_ID,
+        session_id=publisher.session_id,
+    )
+
+    if sync_stats.get("skipped"):
+        print("MongoDB sync skipped (not connected)")
+    else:
+        print(f"  Previous sessions closed: {sync_stats.get('previous_sessions_closed', 0)}")
+        print(f"  Positions synced: {sync_stats.get('positions_synced', 0)}")
+        print(f"  Orders synced: {sync_stats.get('orders_synced', 0)}")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # SIGNAL HANDLERS
+    # ═══════════════════════════════════════════════════════════════════════
+
+    shutdown_event = asyncio.Event()
+
+    def handle_signal(sig, frame):
+        print(f"\n\nSignal received ({sig}), shutting down...")
+        shutdown_event.set()
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # NODE INDÍTÁSA
+    # ═══════════════════════════════════════════════════════════════════════
 
     print("\n" + "=" * 70)
     print("TRADING NODE INDÍTÁSA")
@@ -188,14 +275,41 @@ def main():
     print(f"Stop Loss: {STOP_LOSS_PCT}%")
     print("=" * 70)
 
-    # Node indítása (blokkoló)
+    # Háttérben futtatjuk a node-ot
+    node_task = asyncio.create_task(
+        asyncio.to_thread(node.run),
+        name="trading-node"
+    )
+
     try:
-        node.run()
-    except KeyboardInterrupt:
-        print("\n\nLeállítás (Ctrl+C)...")
+        # Várakozás shutdown jelzésre
+        await shutdown_event.wait()
+
+    except Exception as e:
+        print(f"\nError: {e}")
+        await publisher.stop(reason="ERROR", state_snapshot=strategy.on_save())
+        raise
+
     finally:
+        # Graceful shutdown
+        print("\nShutting down...")
+
+        # Node leállítása
+        node.stop()
+
+        # MongoDB publisher leállítása
+        await publisher.stop(
+            reason="NORMAL",
+            state_snapshot=strategy.on_save(),
+        )
+
         node.dispose()
         print("Node leállítva.")
+
+
+def main():
+    """Entry point."""
+    asyncio.run(run_with_mongodb())
 
 
 if __name__ == "__main__":

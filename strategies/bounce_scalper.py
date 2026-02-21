@@ -25,12 +25,12 @@ from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.events import PositionClosed, PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Currency
-from nautilus_trader.trading.strategy import Strategy
 
+from strategies.base_strategy import BaseStrategy
 from strategies.bounce_scalper_config import BounceScalperConfig
 
 
-class BounceScalper(Strategy):
+class BounceScalper(BaseStrategy):
     """
     Bounce Scalper - Mean Reversion Scalping Stratégia.
 
@@ -564,6 +564,9 @@ class BounceScalper(Strategy):
         │ Ezeket használjuk a belső állapot frissítésére.                │
         └─────────────────────────────────────────────────────────────────┘
         """
+        # Szülő osztály esemény kezelése (MongoDB)
+        super().on_event(event)
+
         if isinstance(event, PositionOpened):
             # ─────────────────────────────────────────────────────────────
             # ÚJ POZÍCIÓ NYÍLT
@@ -607,3 +610,105 @@ class BounceScalper(Strategy):
                     f"Position closed: {instrument_id} | "
                     f"Cooldown: {self.config.cooldown_ticks} bars"
                 )
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MONGODB CALLBACK METÓDUSOK
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _get_balance_snapshot(self) -> dict:
+        """
+        Balance adatok a MongoDB publisher számára.
+
+        Returns:
+            Balance információk dictionary-je
+        """
+        if self.usdc is None:
+            return {}
+
+        accounts = self.cache.accounts()
+        if not accounts:
+            return {}
+
+        account = accounts[0]
+        balances = []
+
+        # USDC egyenleg
+        usdc_balance = account.balance(self.usdc)
+        if usdc_balance:
+            balances.append({
+                "currency": "USDC",
+                "total": float(usdc_balance.total.as_double()),
+                "free": float(usdc_balance.free.as_double()),
+                "locked": float(usdc_balance.locked.as_double()),
+            })
+
+        # Nyitott pozíciók száma
+        open_positions = len(self.cache.positions_open())
+
+        return {
+            "balances": balances,
+            "total_equity_usdc": float(usdc_balance.total.as_double()) if usdc_balance else 0,
+            "open_positions_count": open_positions,
+        }
+
+    def _get_heartbeat_data(self) -> dict:
+        """
+        Heartbeat adatok a MongoDB publisher számára.
+
+        Returns:
+            Stratégia állapot dictionary
+        """
+        # Összesített állapot
+        active_positions = 0
+        instruments_in_cooldown = 0
+
+        for instrument_id, state in self.instrument_states.items():
+            if state["position_count"] > 0:
+                active_positions += 1
+            if state["cooldown_remaining"] > 0:
+                instruments_in_cooldown += 1
+
+        return {
+            "active_positions": active_positions,
+            "instruments_tracked": len(self.instrument_states),
+            "instruments_in_cooldown": instruments_in_cooldown,
+        }
+
+    def _get_state_to_save(self) -> dict:
+        """
+        Stratégia állapot mentése (NautilusTrader + MongoDB).
+
+        Returns:
+            Mentendő állapot
+        """
+        # Per-instrument állapotok, amik fontosak recovery-hez
+        states = {}
+        for instrument_id, state in self.instrument_states.items():
+            states[str(instrument_id)] = {
+                "entry_price": state["entry_price"],
+                "position_id": str(state["position_id"]) if state["position_id"] else None,
+                "position_count": state["position_count"],
+                "cooldown_remaining": state["cooldown_remaining"],
+            }
+
+        return {"instrument_states": states}
+
+    def _restore_state(self, state: dict) -> None:
+        """
+        Stratégia állapot visszaállítása.
+
+        Args:
+            state: Mentett állapot
+        """
+        saved_states = state.get("instrument_states", {})
+
+        for instrument_id_str, saved in saved_states.items():
+            # Instrument ID visszaalakítása
+            for instrument_id in self.instrument_states:
+                if str(instrument_id) == instrument_id_str:
+                    current = self.instrument_states[instrument_id]
+                    current["entry_price"] = saved.get("entry_price")
+                    current["position_count"] = saved.get("position_count", 0)
+                    current["cooldown_remaining"] = saved.get("cooldown_remaining", 0)
+                    self.log.info(f"State restored for {instrument_id}")
+                    break

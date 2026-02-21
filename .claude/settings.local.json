@@ -3,7 +3,9 @@
     "allow": [
       "WebSearch",
       "Bash(head:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(python:*)",
+      "Bash(MONGODB_ENABLED=true python:*)"
     ]
   }
 }
