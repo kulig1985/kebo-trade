@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "trading-strategist": {
+      "source": "kukapay/crypto-skills",
+      "sourceType": "github",
+      "computedHash": "4996644c3ba03400d9122f3720d4de224583f21f40d1a02b9313f50ed5bbe709"
+    },
+    "using-nautilus-trader": {
+      "source": "PoorRican/dotfiles",
+      "sourceType": "github",
+      "computedHash": "9472d5189f8a6e40581c654303f258ce5b5c2068eba941df0498715535ae2069"
+    }
+  }
+}
