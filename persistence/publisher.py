@@ -88,6 +88,14 @@ class MongoDBPublisher:
             logger.info("MongoDB persistence disabled")
             return
 
+        # Connection string ellenőrzése
+        if not self.config.connection_string:
+            logger.error(
+                "MongoDB connection string not configured! "
+                "Set MONGODB_URI environment variable."
+            )
+            return
+
         try:
             # PyMongo Async client létrehozása
             self._client = AsyncMongoClient(

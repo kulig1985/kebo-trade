@@ -68,4 +68,11 @@ backtests/reports/
 # macOS
 .DS_Store
 
-*.txt
+# Config (külső stratégia config)
+config/strategy.json
+
+# Logs directory
+logs/
+
+backtest_results/
+

@@ -28,12 +28,10 @@ class MongoDBConfig:
     # ═══════════════════════════════════════════════════════════════════════
 
     # MongoDB connection string
-    # FONTOS: authSource=admin kell, mert ott van a user létrehozva
+    # KÖTELEZŐ: MONGODB_URI környezeti változóból!
+    # Példa: mongodb://user:password@host:27017/database?authSource=admin
     connection_string: str = field(
-        default_factory=lambda: os.environ.get(
-            "MONGODB_URI",
-            ""
-        )
+        default_factory=lambda: os.environ.get("MONGODB_URI", "")
     )
 
     # Adatbázis neve

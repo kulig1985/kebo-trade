@@ -1,0 +1,74 @@
+# =============================================================================
+# Docker Build Context - Kizárások
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.eggs
+*.egg-info
+.installed.cfg
+*.egg
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Virtual environments
+venv
+.venv
+env
+ENV
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Data files (nagy méretűek, nem kellenek a build-hez)
+data/bounce_data/
+*.csv
+*.parquet
+
+# Backtest eredmények
+backtest_results/
+
+# Dokumentáció
+docs/
+*.md
+!requirements.txt
+
+# Development tools
+.pre-commit-config.yaml
+Makefile
+
+# Local config (ne kerüljön be az image-be!)
+.env
+.env.*
+*.local
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.docker
+
+# Claude/Agent specific
+.claude/
+.agents/
+
+# macOS
+.DS_Store
+
+# Logs
+logs/
+*.log

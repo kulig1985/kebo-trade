@@ -1,31 +1,27 @@
 """
-Bounce Scalper - Live Trading (MongoDB Integrációval)
-=====================================================
+Bounce Scalper - Live Trading (MongoDB + Docker támogatás)
+==========================================================
 
 FIGYELEM: Ez VALÓS pénzzel kereskedik!
 Először MINDIG tesztelj TESTNET-en!
 
-Futtatás:
+Futtatás (lokális):
     cd /Users/kuligabor/git/kebo-trade-wrapper/kebo-trade
 
-    # Környezeti változók beállítása
     export BINANCE_API_KEY="your_api_key"
     export BINANCE_API_SECRET="your_api_secret"
-
-    # TESTNET futtatás (ajánlott először!)
     export BINANCE_TESTNET="true"
     python run/run_live.py
 
-    # LIVE futtatás (FIGYELEM: VALÓS PÉNZ!)
-    export BINANCE_TESTNET="false"
-    python run/run_live.py
+Futtatás (Docker):
+    docker-compose up -d
 
-MongoDB:
-    - Automatikusan csatlakozik (MONGODB_URI env var vagy alapértelmezett)
-    - Kikapcsolható: export MONGODB_ENABLED="false"
+Külső config:
+    Ha USE_EXTERNAL_CONFIG=true, akkor a /app/config/strategy.json-t olvassa
 """
 
 import asyncio
+import json
 import os
 import signal
 import sys
@@ -52,43 +48,95 @@ from strategies.bounce_scalper_config import BounceScalperConfig
 
 
 # ============================================================================
-# KONFIGURÁCIÓ (optimalizált backtest alapján)
+# DEFAULT KONFIGURÁCIÓ
 # ============================================================================
 
-# Párok - SPOT piacon
-SYMBOLS = [
-    "BTCUSDC",
-    "ETHUSDC",
-    "SOLUSDC",
-    "ARBUSDC",
-    "TIAUSDC",
-    "ADAUSDC",
-    "AVAXUSDC",
-    "DOGEUSDC",
-]
+DEFAULT_CONFIG = {
+    "strategy_type": "bounce_scalper",
+    "strategy_id": "bounce_scalper_live_001",
+    "symbols": [
+        "BTCUSDC",
+        "ETHUSDC",
+        "SOLUSDC",
+        "ARBUSDC",
+        "TIAUSDC",
+        "ADAUSDC",
+        "AVAXUSDC",
+        "DOGEUSDC",
+    ],
+    "parameters": {
+        "trade_size_usdc": 5.0,
+        "max_positions_per_instrument": 1,
+        "take_profit_pct": 1.0,
+        "stop_loss_pct": 1.5,
+        "ema_period": 20,
+        "atr_period": 14,
+        "entry_atr_multiplier": 0.8,
+        "exit_atr_multiplier": None,
+        "min_free_balance_usdc": 10.0,
+        "cooldown_ticks": 10,
+    },
+}
 
-# Stratégia paraméterek
-TRADE_SIZE_USDC = Decimal("5.0")       # Trade méret USDC-ben
-MAX_POSITIONS_PER_INSTRUMENT = 1        # Max pozíciók páronként
-TAKE_PROFIT_PCT = Decimal("1.0")        # Take Profit % - gyors scalping
-STOP_LOSS_PCT = Decimal("1.5")          # Stop Loss % - tight
-EMA_PERIOD = 20
-ATR_PERIOD = 14
-ENTRY_ATR_MULT = Decimal("0.8")         # Entry: EMA - 0.8*ATR
-EXIT_ATR_MULT = None                    # Nincs exit band, csak TP/SL
-MIN_FREE_BALANCE = Decimal("10.0")      # Minimum szabad egyenleg
-COOLDOWN_BARS = 10                      # Gyors újra belépés
 
-# Stratégia azonosító
-STRATEGY_TYPE = "bounce_scalper"
-STRATEGY_ID = "bounce_scalper_live_001"
+def load_config() -> dict:
+    """
+    Konfiguráció betöltése.
+
+    Prioritás:
+    1. Külső JSON fájl (/app/config/strategy.json) ha USE_EXTERNAL_CONFIG=true
+    2. Környezeti változókból (STRATEGY_ID)
+    3. DEFAULT_CONFIG
+    """
+    config = DEFAULT_CONFIG.copy()
+
+    # Külső config fájl ellenőrzése
+    use_external = os.environ.get("USE_EXTERNAL_CONFIG", "false").lower() == "true"
+    external_config_path = Path("/app/config/strategy.json")
+
+    if use_external and external_config_path.exists():
+        print(f"Loading external config: {external_config_path}")
+        with open(external_config_path) as f:
+            external_config = json.load(f)
+            # Merge config
+            config["strategy_type"] = external_config.get("strategy_type", config["strategy_type"])
+            config["strategy_id"] = external_config.get("strategy_id", config["strategy_id"])
+            config["symbols"] = external_config.get("symbols", config["symbols"])
+            if "parameters" in external_config:
+                config["parameters"].update(external_config["parameters"])
+
+    # Environment override for strategy_id
+    env_strategy_id = os.environ.get("STRATEGY_ID")
+    if env_strategy_id:
+        config["strategy_id"] = env_strategy_id
+
+    return config
+
+
+def is_running_in_docker() -> bool:
+    """Ellenőrzi, hogy Docker-ben fut-e."""
+    return (
+        os.path.exists("/.dockerenv") or
+        os.environ.get("DOCKER_CONTAINER", "false").lower() == "true"
+    )
 
 
 async def run_with_mongodb():
     """Live trading indítása MongoDB integrációval."""
     print("=" * 70)
-    print("BOUNCE SCALPER - LIVE TRADING (MongoDB)")
+    print("BOUNCE SCALPER - LIVE TRADING")
     print("=" * 70)
+
+    in_docker = is_running_in_docker()
+    if in_docker:
+        print("Running in Docker container")
+
+    # Konfiguráció betöltése
+    config_data = load_config()
+    strategy_type = config_data["strategy_type"]
+    strategy_id = config_data["strategy_id"]
+    symbols = config_data["symbols"]
+    params = config_data["parameters"]
 
     # API kulcsok ellenőrzése
     api_key = os.environ.get("BINANCE_API_KEY")
@@ -100,17 +148,19 @@ async def run_with_mongodb():
         print("\nÁllítsd be a környezeti változókat:")
         print("  export BINANCE_API_KEY='your_api_key'")
         print("  export BINANCE_API_SECRET='your_api_secret'")
-        print("\nTestnet használatához:")
-        print("  export BINANCE_TESTNET='true'")
+        if in_docker:
+            print("\nDocker használatához: .env fájl vagy -e flag")
         return
 
     mode = "TESTNET" if is_testnet else "🔴 LIVE (VALÓS PÉNZ!)"
     print(f"\nMód: {mode}")
-    print(f"Trade size: {TRADE_SIZE_USDC} USDC")
-    print(f"Take Profit: {TAKE_PROFIT_PCT}%")
-    print(f"Stop Loss: {STOP_LOSS_PCT}%")
+    print(f"Strategy ID: {strategy_id}")
+    print(f"Trade size: {params['trade_size_usdc']} USDC")
+    print(f"Take Profit: {params['take_profit_pct']}%")
+    print(f"Stop Loss: {params['stop_loss_pct']}%")
 
-    if not is_testnet:
+    # Docker-ben NEM kérünk megerősítést (nem interaktív)
+    if not is_testnet and not in_docker:
         print("\n⚠️  FIGYELMEZTETÉS: VALÓS PÉNZZEL FOGSZ KERESKEDNI!")
         confirm = input("Biztosan folytatod? (yes/no): ")
         if confirm.lower() != "yes":
@@ -123,8 +173,8 @@ async def run_with_mongodb():
     mongo_config = MongoDBConfig()
     publisher = MongoDBPublisher(
         config=mongo_config,
-        strategy_type=STRATEGY_TYPE,
-        strategy_id=STRATEGY_ID,
+        strategy_type=strategy_type,
+        strategy_id=strategy_id,
         is_backtest=False,
     )
 
@@ -143,12 +193,14 @@ async def run_with_mongodb():
     # TRADING NODE SETUP
     # ═══════════════════════════════════════════════════════════════════════
 
+    log_level = os.environ.get("LOG_LEVEL", "INFO")
+
     # TradingNode konfiguráció - RECONCILIATION ENABLED
     node_config = TradingNodeConfig(
         trader_id=TraderId("BOUNCE-LIVE-001"),
         logging=LoggingConfig(
-            log_level="INFO",
-            log_colors=True,
+            log_level=log_level,
+            log_colors=not in_docker,  # Docker-ben nincs szín
         ),
         exec_engine=LiveExecEngineConfig(
             reconciliation=True,
@@ -183,7 +235,7 @@ async def run_with_mongodb():
     # Instrument IDs
     instrument_ids = frozenset([
         InstrumentId.from_str(f"{symbol}.BINANCE")
-        for symbol in SYMBOLS
+        for symbol in symbols
     ])
 
     # Bar types (5m EXTERNAL - live adatforrás)
@@ -200,23 +252,23 @@ async def run_with_mongodb():
         )
 
     # Stratégia konfiguráció
-    config = BounceScalperConfig(
+    strategy_config = BounceScalperConfig(
         instrument_ids=instrument_ids,
         bar_types=bar_types,
-        trade_size_usdc=TRADE_SIZE_USDC,
-        max_positions_per_instrument=MAX_POSITIONS_PER_INSTRUMENT,
-        ema_period=EMA_PERIOD,
-        atr_period=ATR_PERIOD,
-        entry_atr_multiplier=ENTRY_ATR_MULT,
-        take_profit_pct=TAKE_PROFIT_PCT,
-        stop_loss_pct=STOP_LOSS_PCT,
-        exit_atr_multiplier=EXIT_ATR_MULT,
-        min_free_balance_usdc=MIN_FREE_BALANCE,
-        cooldown_ticks=COOLDOWN_BARS,
+        trade_size_usdc=Decimal(str(params["trade_size_usdc"])),
+        max_positions_per_instrument=params["max_positions_per_instrument"],
+        ema_period=params["ema_period"],
+        atr_period=params["atr_period"],
+        entry_atr_multiplier=Decimal(str(params["entry_atr_multiplier"])),
+        take_profit_pct=Decimal(str(params["take_profit_pct"])),
+        stop_loss_pct=Decimal(str(params["stop_loss_pct"])),
+        exit_atr_multiplier=Decimal(str(params["exit_atr_multiplier"])) if params["exit_atr_multiplier"] else None,
+        min_free_balance_usdc=Decimal(str(params["min_free_balance_usdc"])),
+        cooldown_ticks=params["cooldown_ticks"],
     )
 
     # Stratégia hozzáadása
-    strategy = BounceScalper(config=config)
+    strategy = BounceScalper(config=strategy_config)
 
     # MongoDB persistence beállítása
     strategy.set_persistence(publisher)
@@ -227,15 +279,13 @@ async def run_with_mongodb():
     # STARTUP SYNC (MongoDB ↔ NautilusTrader)
     # ═══════════════════════════════════════════════════════════════════════
 
-    # FONTOS: Ez MIUTÁN a NautilusTrader reconciliation lefutott
-    # A node.build() elindítja a reconciliation-t
     print("\n" + "=" * 70)
     print("STARTUP SYNC")
     print("=" * 70)
 
     sync_stats = await sync_service.sync_on_startup(
         cache=node.trader.cache,
-        strategy_id=STRATEGY_ID,
+        strategy_id=strategy_id,
         session_id=publisher.session_id,
     )
 
@@ -270,9 +320,9 @@ async def run_with_mongodb():
     for inst_id in sorted(instrument_ids, key=str):
         print(f"  • {inst_id}")
     print(f"\nTimeframe: 5-MINUTE")
-    print(f"Entry: EMA - {ENTRY_ATR_MULT}×ATR")
-    print(f"Take Profit: {TAKE_PROFIT_PCT}%")
-    print(f"Stop Loss: {STOP_LOSS_PCT}%")
+    print(f"Entry: EMA - {params['entry_atr_multiplier']}×ATR")
+    print(f"Take Profit: {params['take_profit_pct']}%")
+    print(f"Stop Loss: {params['stop_loss_pct']}%")
     print("=" * 70)
 
     # Háttérben futtatjuk a node-ot

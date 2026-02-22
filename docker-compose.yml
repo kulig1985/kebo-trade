@@ -1,0 +1,83 @@
+# =============================================================================
+# Kebo Trade - Docker Compose
+# =============================================================================
+#
+# Használat:
+#   # Indítás
+#   docker-compose up -d
+#
+#   # Logok
+#   docker-compose logs -f
+#
+#   # Leállítás
+#   docker-compose down
+#
+#   # Újraépítés
+#   docker-compose build --no-cache
+#
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # BOUNCE SCALPER - Live Trading
+  # ===========================================================================
+  bounce-scalper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    image: kebo-trade:latest
+    container_name: bounce-scalper-live
+
+    # Környezeti változók (.env fájlból)
+    env_file:
+      - .env
+
+    # Külső config és logs mount
+    # HOST_CONFIG_DIR és HOST_LOGS_DIR környezeti változókból, vagy default
+    volumes:
+      - ${HOST_CONFIG_DIR:-./config}:/app/config:ro
+      - ${HOST_LOGS_DIR:-./logs}:/app/logs
+
+    # Restart policy - crash esetén újraindít
+    restart: unless-stopped
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # Graceful shutdown (SIGTERM kezeléshez)
+    stop_grace_period: 30s
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+    # Network
+    networks:
+      - trading-network
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  trading-network:
+    driver: bridge
