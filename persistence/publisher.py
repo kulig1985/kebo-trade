@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, UTC
 from typing import Any, Callable
 
+import aiohttp
 from pymongo import AsyncMongoClient
 
 from persistence.config import MongoDBConfig
@@ -78,6 +79,9 @@ class MongoDBPublisher:
         # Indulási idő (uptime számításhoz)
         self._started_at: datetime | None = None
 
+        # HTTP session (webhook-hoz)
+        self._http_session: aiohttp.ClientSession | None = None
+
     # ═══════════════════════════════════════════════════════════════════════
     # LIFECYCLE
     # ═══════════════════════════════════════════════════════════════════════
@@ -127,6 +131,14 @@ class MongoDBPublisher:
 
         self._running = True
         self._started_at = datetime.now(UTC)
+
+        # HTTP session (webhook-hoz)
+        if self.config.webhook_url:
+            timeout = aiohttp.ClientTimeout(
+                total=self.config.webhook_timeout_ms / 1000
+            )
+            self._http_session = aiohttp.ClientSession(timeout=timeout)
+            logger.info(f"Webhook enabled: {self.config.webhook_url}")
 
         # Session rögzítése
         await self._record_session_start()
@@ -198,6 +210,11 @@ class MongoDBPublisher:
 
         # Session vége rögzítése
         await self._record_session_end(reason, state_snapshot)
+
+        # HTTP session bezárása
+        if self._http_session is not None:
+            await self._http_session.close()
+            self._http_session = None
 
         # Kapcsolat bezárása
         if self._client is not None:
@@ -452,8 +469,72 @@ class MongoDBPublisher:
                 }
                 await self._db[self.config.errors_collection].insert_one(doc)
 
+            # Webhook notification (fire-and-forget)
+            if self._http_session and self.config.webhook_url:
+                asyncio.create_task(
+                    self._send_webhook(event_type, base_doc, data, timestamp)
+                )
+
         except Exception as e:
             logger.error(f"MongoDB write error ({event_type}): {e}")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # WEBHOOK NOTIFICATION
+    # ═══════════════════════════════════════════════════════════════════════
+
+    async def _send_webhook(
+        self,
+        event_type: str,
+        base_doc: dict,
+        data: dict,
+        timestamp: datetime,
+    ) -> None:
+        """
+        Webhook notification küldése a backend-nek.
+
+        Fire-and-forget: ha nem sikerül, csak logolunk, nem retry-olunk.
+        """
+        if self._http_session is None:
+            return
+
+        # Payload összeállítása
+        payload = {
+            "event": event_type,
+            "collection": self._get_collection_name(event_type),
+            "strategy_id": self.strategy_id,
+            "session_id": self.session_id,
+            "is_backtest": self.is_backtest,
+            "timestamp": timestamp.isoformat(),
+            "data": data,
+        }
+
+        try:
+            async with self._http_session.post(
+                self.config.webhook_url,
+                json=payload,
+            ) as response:
+                if response.status >= 400:
+                    logger.warning(
+                        f"Webhook failed: {response.status} for {event_type}"
+                    )
+        except asyncio.TimeoutError:
+            logger.debug(f"Webhook timeout for {event_type}")
+        except Exception as e:
+            logger.debug(f"Webhook error for {event_type}: {e}")
+
+    def _get_collection_name(self, event_type: str) -> str:
+        """Event type -> collection név."""
+        mapping = {
+            "orders": self.config.orders_collection,
+            "order_update": self.config.orders_collection,
+            "fills": self.config.fills_collection,
+            "positions": self.config.positions_collection,
+            "position_update": self.config.positions_collection,
+            "balances": self.config.balances_collection,
+            "heartbeat": self.config.heartbeat_collection,
+            "errors": self.config.errors_collection,
+        }
+        return mapping.get(event_type, event_type)
 
     # ═══════════════════════════════════════════════════════════════════════
     # IDŐZÍTETT TASK-OK

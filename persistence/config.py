@@ -46,4 +46,11 @@ class MongoDBConfig:
     heartbeat_collection: str = "heartbeat"
     sessions_collection: str = "sessions"
     errors_collection: str = "errors"
-    config_collection: str = "strategy_configs"  # ÚJ: config collection
+    config_collection: str = "strategy_configs"
+
+    # Webhook notification (opcionális)
+    # Ha be van állítva, minden DB írás után POST-ol ide
+    webhook_url: str = field(
+        default_factory=lambda: os.environ.get("WEBHOOK_URL", "")
+    )
+    webhook_timeout_ms: int = 2000  # 2 sec timeout
