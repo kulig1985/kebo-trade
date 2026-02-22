@@ -1,0 +1,17 @@
+{
+    "strategy_id": "my_custom_strategy",
+    "strategy_type": "bounce_scalper",
+    "symbols": ["BTCUSDC", "ETHUSDC", "SOLUSDC"],
+    "parameters": {
+        "trade_size_usdc": 10.0,
+        "max_positions_per_instrument": 1,
+        "take_profit_pct": 1.5,
+        "stop_loss_pct": 2.0,
+        "ema_period": 20,
+        "atr_period": 14,
+        "entry_atr_multiplier": 0.8,
+        "exit_atr_multiplier": null,
+        "min_free_balance_usdc": 20.0,
+        "cooldown_ticks": 10
+    }
+}
