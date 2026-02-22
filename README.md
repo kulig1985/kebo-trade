@@ -246,7 +246,19 @@ A rendszer a beépített default értékeket használja automatikusan.
 
 ## 6. Docker futtatás
 
-### 6.1 Első indítás
+### 6.1 Mikor kell `--build`?
+
+| Változás | Parancs |
+|----------|---------|
+| `docker.env` módosítás | `docker-compose up -d` |
+| Python kód (`*.py`) | `docker-compose up -d --build` |
+| `requirements.txt` | `docker-compose up -d --build` |
+| `Dockerfile` | `docker-compose up -d --build` |
+| `git pull` | `docker-compose up -d --build` |
+
+**Egyszerűen:** Ha csak a `docker.env` változott → NEM kell `--build`. Minden más → KELL `--build`.
+
+### 6.2 Első indítás
 
 ```bash
 cp env-examples/docker.env.example docker.env
@@ -254,32 +266,32 @@ nano docker.env
 docker-compose up -d --build
 ```
 
-### 6.2 Logok
+### 6.3 Logok
 
 ```bash
 docker-compose logs -f
 ```
 
-### 6.3 Leállítás
+### 6.4 Leállítás
 
 ```bash
 docker-compose down
 ```
 
-### 6.4 Újraindítás
+### 6.5 Újraindítás
 
 ```bash
 docker-compose up -d
 ```
 
-### 6.5 Config módosítás után
+### 6.6 Config módosítás után
 
 ```bash
 nano docker.env
 docker-compose up -d
 ```
 
-### 6.6 Kód módosítás után (git pull)
+### 6.7 Kód módosítás után (git pull)
 
 ```bash
 docker-compose up -d --build
