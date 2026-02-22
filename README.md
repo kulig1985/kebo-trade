@@ -1,20 +1,21 @@
 # Kebo Trade
 
-NautilusTrader alapú cryptocurrency trading rendszer.
+NautilusTrader alapú cryptocurrency trading rendszer MongoDB persistence-el.
 
 ---
 
 ## Tartalomjegyzék
 
 1. [Telepítés](#1-telepítés)
-2. [Környezeti változók beállítása](#2-környezeti-változók-beállítása)
+2. [Környezeti változók](#2-környezeti-változók)
 3. [Backtest futtatása](#3-backtest-futtatása)
 4. [Live trading futtatása](#4-live-trading-futtatása)
-5. [Config kezelés](#5-config-kezelés)
-6. [Docker használat](#6-docker-használat)
+5. [Stratégia config kezelés](#5-stratégia-config-kezelés)
+6. [Docker futtatás](#6-docker-futtatás)
 7. [Több stratégia futtatása](#7-több-stratégia-futtatása)
 8. [Webhook notification](#8-webhook-notification)
-9. [Hibaelhárítás](#9-hibaelhárítás)
+9. [MongoDB collections](#9-mongodb-collections)
+10. [Hibaelhárítás](#10-hibaelhárítás)
 
 ---
 
@@ -27,35 +28,54 @@ pip install -r requirements.txt
 
 ---
 
-## 2. Környezeti változók beállítása
+## 2. Környezeti változók
 
-Hozd létre a `.env` fájlt:
+### 2.1 Összes változó
+
+| Változó | Kötelező | Default | Leírás |
+|---------|----------|---------|--------|
+| `MONGODB_URI` | **IGEN** | - | MongoDB connection string |
+| `MONGODB_ENABLED` | nem | `true` | MongoDB be/ki |
+| `STRATEGY_ID` | **IGEN** | - | Egyedi stratégia azonosító |
+| `BINANCE_API_KEY` | **IGEN** (live) | - | Binance API key |
+| `BINANCE_API_SECRET` | **IGEN** (live) | - | Binance API secret |
+| `BINANCE_TESTNET` | nem | `true` | Testnet mód |
+| `WEBHOOK_URL` | nem | - | Backend notification URL |
+| `LOG_LEVEL` | nem | `INFO` | Log szint |
+
+### 2.2 .env fájl létrehozása
 
 ```bash
+# Példa fájl másolása
 cp .env.example .env
+
+# Szerkesztés
+nano .env
 ```
 
-Szerkeszd a `.env` fájlt:
+### 2.3 .env fájl betöltése
+
+**FONTOS:** A `.env` fájlt be kell tölteni a terminálban futtatás előtt!
 
 ```bash
-# KÖTELEZŐ - MongoDB kapcsolat
-MONGODB_URI=mongodb://user:password@host:27017/nautilus?authSource=admin
+# Betöltés
+source .env
 
-# KÖTELEZŐ live tradinghez - Binance API
-BINANCE_API_KEY=your_api_key_here
-BINANCE_API_SECRET=your_api_secret_here
-BINANCE_TESTNET=true
-
-# OPCIONÁLIS
-STRATEGY_ID=bounce_scalper_live_001
-WEBHOOK_URL=http://localhost:3000/api/trading/webhook
-LOG_LEVEL=INFO
+# Ellenőrzés
+echo $STRATEGY_ID
 ```
 
-Betöltés terminálban:
+### 2.4 Példa .env fájl tartalma
 
 ```bash
-export $(grep -v '^#' .env | xargs)
+export MONGODB_URI="mongodb://user:password@host:27017/nautilus?authSource=admin"
+export MONGODB_ENABLED="true"
+export STRATEGY_ID="bounce_scalper_live_001"
+export BINANCE_API_KEY="your_api_key"
+export BINANCE_API_SECRET="your_api_secret"
+export BINANCE_TESTNET="true"
+export WEBHOOK_URL=""
+export LOG_LEVEL="INFO"
 ```
 
 ---
@@ -65,35 +85,46 @@ export $(grep -v '^#' .env | xargs)
 ### 3.1 Egyszerű backtest (MongoDB nélkül)
 
 ```bash
+# .env betöltése (STRATEGY_ID kell!)
+source .env
+
+# Vagy MONGODB_ENABLED kikapcsolása
+export MONGODB_ENABLED="false"
+
+# Futtatás
 python run/run_backtest.py
 ```
-
-Az eredmények a `backtest_results/` mappában lesznek.
 
 ### 3.2 Backtest MongoDB-vel
 
-Ha szeretnéd, hogy a backtest is mentse az adatokat MongoDB-be:
+Ha szeretnéd, hogy a backtest eredmények MongoDB-be kerüljenek:
 
 ```bash
-export MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin"
+source .env
 export MONGODB_ENABLED="true"
-
 python run/run_backtest.py
 ```
 
-### 3.3 Backtest paraméterek módosítása
+### 3.3 Backtest-hez külön .env
 
-Szerkeszd a `run/run_backtest.py` fájlt:
+Használd a `env-examples/backtest.env.example` fájlt:
+
+```bash
+# Másold és szerkeszd
+cp env-examples/backtest.env.example backtest.env
+nano backtest.env
+
+# Betöltés és futtatás
+source backtest.env
+python run/run_backtest.py
+```
+
+### 3.4 Backtest paraméterek módosítása
+
+Szerkeszd a `run/run_backtest.py` fájlt (70-90. sorok körül):
 
 ```python
-# 73-82. sor körül
-SYMBOLS = [
-    "BTC/USDC",
-    "ETH/USDC",
-    "SOL/USDC",
-]
-
-# 85-89. sor körül
+SYMBOLS = ["BTC/USDC", "ETH/USDC", "SOL/USDC"]
 START_DATE = "20251101"
 END_DATE = "20260221"
 STARTING_USDC = 1000.0
@@ -103,55 +134,62 @@ STARTING_USDC = 1000.0
 
 ## 4. Live trading futtatása
 
-### 4.1 Testnet (ajánlott először!)
+### 4.1 Előkészületek
+
+1. Hozd létre a `.env` fájlt
+2. Állítsd be a Binance API kulcsokat
+3. Állítsd be a MongoDB URI-t
+4. Válassz egyedi STRATEGY_ID-t
+
+### 4.2 Testnet futtatás (ajánlott először!)
 
 ```bash
-export MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin"
-export BINANCE_API_KEY="your_testnet_api_key"
-export BINANCE_API_SECRET="your_testnet_api_secret"
-export BINANCE_TESTNET="true"
+# .env fájl tartalma:
+# export BINANCE_TESTNET="true"
 
+source .env
 python run/run_live.py
 ```
 
-### 4.2 Éles kereskedés (VALÓS PÉNZ!)
+### 4.3 Éles futtatás (VALÓS PÉNZ!)
 
 ```bash
-export MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin"
-export BINANCE_API_KEY="your_live_api_key"
-export BINANCE_API_SECRET="your_live_api_secret"
-export BINANCE_TESTNET="false"
+# .env fájlban:
+# export BINANCE_TESTNET="false"
 
+source .env
 python run/run_live.py
 ```
 
-### 4.3 Leállítás
+### 4.4 Leállítás
 
-`Ctrl+C` - graceful shutdown, menti az állapotot.
+`Ctrl+C` - graceful shutdown, menti az állapotot MongoDB-be.
 
 ---
 
-## 5. Config kezelés
+## 5. Stratégia config kezelés
 
-A stratégia konfigurációkat MongoDB-ben tárolhatod (`strategy_configs` collection).
+A stratégia paramétereket MongoDB-ben tárolhatod (`strategy_configs` collection).
 
-**FONTOS:** Először állítsd be a MONGODB_URI-t!
+### 5.1 MONGODB_URI beállítása
+
+Minden config parancs előtt kell!
 
 ```bash
+source .env
+# vagy
 export MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin"
 ```
 
-### 5.1 Default config feltöltése
+### 5.2 Default config feltöltése
 
 ```bash
 python run/manage_config.py upload bounce_scalper_live_001
 ```
 
-Ez a beépített default értékeket tölti fel.
+### 5.3 Custom config feltöltése JSON-ból
 
-### 5.2 Custom config feltöltése (JSON fájlból)
-
-Hozz létre egy JSON fájlt (pl. `my_config.json`):
+Hozz létre JSON fájlt (pl. `my_config.json`):
 
 ```json
 {
@@ -173,86 +211,78 @@ Hozz létre egy JSON fájlt (pl. `my_config.json`):
 }
 ```
 
-Töltsd fel:
+Feltöltés:
 
 ```bash
 python run/upload_config.py my_config.json
 ```
 
-Példa fájl: `example_config.json`
-
-### 5.3 Custom config feltöltése (interaktív)
+### 5.4 Interaktív config létrehozás
 
 ```bash
 python run/upload_config.py --interactive
 ```
 
-Ez végigkérdezi a paramétereket.
-
-### 5.4 Configok listázása
+### 5.5 Configok listázása
 
 ```bash
 python run/manage_config.py list
 ```
 
-Kimenet:
-```
-Found 2 config(s):
-
-  • bounce_scalper_live_001
-    Type: bounce_scalper
-    Symbols: ['BTCUSDC', 'ETHUSDC', 'SOLUSDC']
-
-  • my_btc_scalper
-    Type: bounce_scalper
-    Symbols: ['BTCUSDC', 'ETHUSDC']
-```
-
-### 5.5 Config lekérése
+### 5.6 Config lekérése
 
 ```bash
 python run/manage_config.py get my_btc_scalper
 ```
 
-### 5.6 Config módosítása
-
-Módosítsd a JSON fájlt és töltsd fel újra - felülírja a régit:
-
-```bash
-python run/upload_config.py my_config.json
-```
-
 ### 5.7 Ha nincs config a DB-ben
 
-A rendszer automatikusan a beépített default értékeket használja, így a DB-ben tárolt config **opcionális**.
+A rendszer a beépített default értékeket használja automatikusan.
 
 ---
 
-## 6. Docker használat
+## 6. Docker futtatás
 
 ### 6.1 Image buildelése
 
 ```bash
-# macOS-en (linux/amd64 platformra, mert a szerver Linux)
 docker build --platform linux/amd64 -t kebo-trade:latest .
 ```
 
-### 6.2 Futtatás .env fájllal
-
-```bash
-docker run --env-file .env kebo-trade:latest
-```
-
-### 6.3 Futtatás explicit változókkal
+### 6.2 Egy stratégia futtatása
 
 ```bash
 docker run \
   -e MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin" \
-  -e BINANCE_API_KEY="your_api_key" \
-  -e BINANCE_API_SECRET="your_api_secret" \
+  -e MONGODB_ENABLED="true" \
+  -e STRATEGY_ID="bounce_scalper_001" \
+  -e BINANCE_API_KEY="your_key" \
+  -e BINANCE_API_SECRET="your_secret" \
   -e BINANCE_TESTNET="true" \
-  -e STRATEGY_ID="bounce_scalper_live_001" \
   kebo-trade:latest
+```
+
+### 6.3 .env fájllal futtatás
+
+**FONTOS:** Docker-hez az `--env-file` formátum más! Nem kell `export`:
+
+Hozz létre `docker.env` fájlt:
+
+```bash
+MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
+MONGODB_ENABLED=true
+STRATEGY_ID=bounce_scalper_001
+BINANCE_API_KEY=your_key
+BINANCE_API_SECRET=your_secret
+BINANCE_TESTNET=true
+WEBHOOK_URL=
+LOG_LEVEL=INFO
+```
+
+Futtatás:
+
+```bash
+docker run --env-file docker.env kebo-trade:latest
 ```
 
 ### 6.4 docker-compose használata
@@ -261,7 +291,7 @@ docker run \
 # Indítás
 docker-compose up -d
 
-# Logok követése
+# Logok
 docker-compose logs -f
 
 # Leállítás
@@ -271,9 +301,10 @@ docker-compose down
 ### 6.5 Háttérben futtatás
 
 ```bash
-docker run -d --name bounce-scalper \
-  --env-file .env \
+docker run -d \
+  --name bounce-scalper \
   --restart unless-stopped \
+  --env-file docker.env \
   kebo-trade:latest
 
 # Logok
@@ -288,56 +319,72 @@ docker rm bounce-scalper
 
 ## 7. Több stratégia futtatása
 
-Minden stratégiához **külön konténer** kell, különböző `STRATEGY_ID`-val.
+Minden stratégiának **külön STRATEGY_ID** és **külön process/konténer** kell!
 
-### 7.1 Python-nal (két terminál)
+### 7.1 Python - külön terminálokban
 
 **Terminal 1:**
 ```bash
-export MONGODB_URI="mongodb://..."
-export BINANCE_API_KEY="..."
-export BINANCE_API_SECRET="..."
-export STRATEGY_ID="bounce_scalper_001"
+source bounce-001.env
 python run/run_live.py
 ```
 
 **Terminal 2:**
 ```bash
-export MONGODB_URI="mongodb://..."
-export BINANCE_API_KEY="..."
-export BINANCE_API_SECRET="..."
-export STRATEGY_ID="bounce_scalper_002"
+source bounce-002.env
 python run/run_live.py
 ```
 
-### 7.2 Docker-rel (két konténer)
+### 7.2 Python - háttérben
 
 ```bash
-# Stratégia 1
-docker run -d --name bounce-001 \
-  -e MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin" \
-  -e BINANCE_API_KEY="your_api_key" \
-  -e BINANCE_API_SECRET="your_api_secret" \
-  -e BINANCE_TESTNET="true" \
-  -e STRATEGY_ID="bounce_scalper_001" \
-  --restart unless-stopped \
-  kebo-trade:latest
+# Stratégia 1 háttérben
+source bounce-001.env && python run/run_live.py &
 
-# Stratégia 2
-docker run -d --name bounce-002 \
-  -e MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin" \
-  -e BINANCE_API_KEY="your_api_key" \
-  -e BINANCE_API_SECRET="your_api_secret" \
-  -e BINANCE_TESTNET="true" \
-  -e STRATEGY_ID="bounce_scalper_002" \
-  --restart unless-stopped \
-  kebo-trade:latest
+# Stratégia 2 háttérben
+source bounce-002.env && python run/run_live.py &
+
+# Folyamatok listázása
+jobs
+
+# Leállítás
+kill %1  # első
+kill %2  # második
 ```
 
-### 7.3 docker-compose.multi.yml használata
+### 7.3 Docker - külön konténerek
+
+Minden stratégiához külön env fájl:
+
+**docker-001.env:**
+```
+MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
+STRATEGY_ID=bounce_scalper_001
+BINANCE_API_KEY=your_key
+BINANCE_API_SECRET=your_secret
+BINANCE_TESTNET=true
+```
+
+**docker-002.env:**
+```
+MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
+STRATEGY_ID=bounce_scalper_002
+BINANCE_API_KEY=your_key
+BINANCE_API_SECRET=your_secret
+BINANCE_TESTNET=true
+```
+
+Indítás:
 
 ```bash
-# .env fájl kell a közös változókhoz (MONGODB_URI, BINANCE_*, stb.)
+docker run -d --name bounce-001 --env-file docker-001.env kebo-trade:latest
+docker run -d --name bounce-002 --env-file docker-002.env kebo-trade:latest
+```
+
+### 7.4 docker-compose.multi.yml használata
+
+```bash
+# Előtte: szerkeszd a .env fájlt a közös változókkal
 
 # Indítás
 docker-compose -f docker-compose.multi.yml up -d
@@ -346,74 +393,71 @@ docker-compose -f docker-compose.multi.yml up -d
 docker-compose -f docker-compose.multi.yml logs -f
 
 # Csak egy stratégia logjait
-docker-compose -f docker-compose.multi.yml logs -f bounce-001
+docker logs -f bounce-scalper-001
 
 # Leállítás
 docker-compose -f docker-compose.multi.yml down
 ```
 
-### 7.4 Saját docker-compose készítése több stratégiához
+### 7.5 Saját multi-compose készítése
 
-Hozz létre `docker-compose.custom.yml` fájlt:
+Hozz létre `my-strategies.yml` fájlt:
 
 ```yaml
 services:
-  btc-strategy:
+  btc-scalper:
     image: kebo-trade:latest
     container_name: btc-scalper
     environment:
       - MONGODB_URI=${MONGODB_URI}
+      - STRATEGY_ID=btc_scalper_001
       - BINANCE_API_KEY=${BINANCE_API_KEY}
       - BINANCE_API_SECRET=${BINANCE_API_SECRET}
       - BINANCE_TESTNET=true
-      - STRATEGY_ID=btc_scalper_001
     restart: unless-stopped
 
-  eth-strategy:
+  eth-scalper:
     image: kebo-trade:latest
     container_name: eth-scalper
     environment:
       - MONGODB_URI=${MONGODB_URI}
-      - BINANCE_API_KEY=${BINANCE_API_KEY}
-      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
-      - BINANCE_TESTNET=true
       - STRATEGY_ID=eth_scalper_001
-    restart: unless-stopped
-
-  sol-strategy:
-    image: kebo-trade:latest
-    container_name: sol-scalper
-    environment:
-      - MONGODB_URI=${MONGODB_URI}
       - BINANCE_API_KEY=${BINANCE_API_KEY}
       - BINANCE_API_SECRET=${BINANCE_API_SECRET}
       - BINANCE_TESTNET=true
-      - STRATEGY_ID=sol_scalper_001
     restart: unless-stopped
 ```
 
+Futtatás:
+
 ```bash
-docker-compose -f docker-compose.custom.yml up -d
+# .env fájl kell a közös változókhoz!
+docker-compose -f my-strategies.yml up -d
 ```
 
 ---
 
 ## 8. Webhook notification
 
-Ha be van állítva `WEBHOOK_URL`, minden DB írás után HTTP POST megy a backend-nek.
+### 8.1 Mi ez?
 
-### 8.1 Beállítás
+Ha be van állítva `WEBHOOK_URL`, minden MongoDB írás után HTTP POST megy a megadott URL-re.
 
+Használat: A NestJS backend fogadja és WebSocket-en továbbítja a frontendnek.
+
+### 8.2 Beállítás
+
+.env fájlban:
 ```bash
 export WEBHOOK_URL="http://your-backend:3000/api/trading/webhook"
 ```
 
-Vagy `.env` fájlban:
-```
-WEBHOOK_URL=http://your-backend:3000/api/trading/webhook
+Docker-ben:
+```bash
+docker run -e WEBHOOK_URL="http://backend:3000/api/trading/webhook" ...
 ```
 
-### 8.2 Webhook payload
+### 8.3 Webhook payload
 
 ```json
 {
@@ -423,17 +467,11 @@ WEBHOOK_URL=http://your-backend:3000/api/trading/webhook
   "session_id": "uuid...",
   "is_backtest": false,
   "timestamp": "2026-02-22T12:00:00.000Z",
-  "data": {
-    "client_order_id": "...",
-    "instrument_id": "BTCUSDC.BINANCE",
-    "order_side": "BUY",
-    "quantity": 0.001,
-    "status": "SUBMITTED"
-  }
+  "data": { ... }
 }
 ```
 
-### 8.3 Event típusok
+### 8.4 Event típusok
 
 | Event | Mikor |
 |-------|-------|
@@ -441,54 +479,14 @@ WEBHOOK_URL=http://your-backend:3000/api/trading/webhook
 | `order_update` | Order státusz változás |
 | `fills` | Order teljesülés |
 | `positions` | Pozíció nyitás |
-| `position_update` | Pozíció zárás/változás |
+| `position_update` | Pozíció zárás |
 | `balances` | Balance snapshot (~60 sec) |
 | `heartbeat` | Heartbeat (~30 sec) |
 | `errors` | Hiba |
 
 ---
 
-## 9. Hibaelhárítás
-
-### "MONGODB_URI not set!"
-
-Állítsd be a környezeti változót:
-```bash
-export MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin"
-```
-
-### "MongoDB connection failed"
-
-- Ellenőrizd a connection string-et
-- Ellenőrizd, hogy a MongoDB szerver elérhető-e
-- Ellenőrizd a felhasználónevet és jelszót
-- Speciális karakterek URL encode-olva legyenek (pl. `+` → `%2B`)
-
-### "BINANCE_API_KEY required"
-
-Állítsd be a Binance API kulcsokat:
-```bash
-export BINANCE_API_KEY="your_api_key"
-export BINANCE_API_SECRET="your_api_secret"
-```
-
-### Docker build lassú
-
-Első build lassú (Rust compiler, dependencies). Utána gyorsabb.
-
-### Konténer nem indul
-
-```bash
-# Logok megnézése
-docker logs bounce-scalper
-
-# Vagy
-docker-compose logs
-```
-
----
-
-## MongoDB Collections
+## 9. MongoDB collections
 
 | Collection | Tartalom |
 |------------|----------|
@@ -501,11 +499,75 @@ docker-compose logs
 | `heartbeat` | Heartbeat |
 | `errors` | Hibák |
 
-Részletes API dokumentáció: [docs/MONGODB_API.md](docs/MONGODB_API.md)
+Részletes dokumentáció: [docs/MONGODB_API.md](docs/MONGODB_API.md)
+
+---
+
+## 10. Hibaelhárítás
+
+### "MONGODB_URI not set!"
+
+```bash
+# Ellenőrizd hogy be van-e töltve
+echo $MONGODB_URI
+
+# Ha üres, töltsd be
+source .env
+```
+
+### "MongoDB connection failed"
+
+- Ellenőrizd a connection string-et
+- Speciális karakterek URL encode-olva? (`+` → `%2B`)
+- MongoDB szerver fut?
+
+### "BINANCE_API_KEY required"
+
+```bash
+# Ellenőrizd
+echo $BINANCE_API_KEY
+
+# Ha üres
+source .env
+```
+
+### Docker konténer nem indul
+
+```bash
+docker logs bounce-scalper
+```
+
+### .env nem töltődik be
+
+**Python-hoz (source paranccsal):**
+```bash
+# A fájlban "export" kell minden sor elé!
+export MONGODB_URI="..."
+```
+
+**Docker-hez (--env-file):**
+```bash
+# A fájlban NEM kell "export"!
+MONGODB_URI=...
+```
+
+---
+
+## Példa fájlok
+
+| Fájl | Leírás |
+|------|--------|
+| `.env.example` | Alap .env minta |
+| `env-examples/bounce-001.env.example` | Stratégia 1 |
+| `env-examples/bounce-002.env.example` | Stratégia 2 |
+| `env-examples/backtest.env.example` | Backtest |
+| `example_config.json` | Stratégia config JSON |
+| `docker-compose.yml` | Egy stratégia |
+| `docker-compose.multi.yml` | Több stratégia |
 
 ---
 
 ## További dokumentáció
 
-- [docs/BOUNCE_SCALPER.md](docs/BOUNCE_SCALPER.md) - Bounce Scalper stratégia részletei
+- [docs/BOUNCE_SCALPER.md](docs/BOUNCE_SCALPER.md) - Bounce Scalper stratégia
 - [docs/MONGODB_API.md](docs/MONGODB_API.md) - MongoDB API (NestJS fejlesztőknek)

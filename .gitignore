@@ -53,9 +53,11 @@ htmlcov/
 *.log
 logs/
 
-# Environment variables
+# Environment variables (valódi env fájlok - NE COMMITOLD!)
 .env
 .env.local
+*.env
+!*.env.example
 
 # NautilusTrader specific
 .nautilus/
