@@ -246,101 +246,59 @@ A rendszer a beépített default értékeket használja automatikusan.
 
 ## 6. Docker futtatás
 
-### 6.1 Gyors indítás (docker-compose)
+### 6.1 Első indítás
 
 ```bash
-# 1. Env fájl létrehozása
 cp env-examples/docker.env.example docker.env
-nano docker.env  # Töltsd ki a saját értékeiddel!
-
-# 2. Build és indítás
-docker-compose up -d --build
-
-# 3. Logok ellenőrzése
-docker-compose logs -f
-```
-
-### 6.2 Leállítás
-
-```bash
-docker-compose down
-```
-
-### 6.3 Újraindítás (config változtatás után)
-
-```bash
-# 1. Szerkeszd a docker.env fájlt
 nano docker.env
-
-# 2. Újraindítás (nem kell újra buildelni!)
-docker-compose down && docker-compose up -d
-
-# 3. Ellenőrzés
-docker-compose logs -f
-```
-
-### 6.4 Újrabuildelés (kód változtatás után)
-
-```bash
-docker-compose down
 docker-compose up -d --build
 ```
 
-### 6.5 Másik config fájl használata
-
-A `docker-compose.yml` alapból a `docker.env` fájlt használja.
-
-**Ha másik fájlt akarsz:**
+### 6.2 Logok
 
 ```bash
-# 1. Másold és nevezd át
-cp docker.env docker-testnet.env
-cp docker.env docker-live.env
-
-# 2. Szerkeszd a docker-compose.yml-t
-#    env_file: - docker.env  -->  env_file: - docker-live.env
-nano docker-compose.yml
-
-# 3. Újraindítás
-docker-compose down && docker-compose up -d
+docker-compose logs -f
 ```
 
-**Vagy használd a docker run parancsot közvetlenül:**
+### 6.3 Leállítás
 
 ```bash
-# Tetszőleges env fájllal
-docker run -d \
-  --name bounce-scalper \
-  --restart unless-stopped \
-  --env-file docker-testnet.env \
-  kebo-trade:latest
+docker-compose down
 ```
 
-### 6.6 Docker parancsok összefoglaló
-
-| Művelet | Parancs |
-|---------|---------|
-| Build + indítás | `docker-compose up -d --build` |
-| Csak indítás | `docker-compose up -d` |
-| Leállítás | `docker-compose down` |
-| Újraindítás | `docker-compose down && docker-compose up -d` |
-| Logok (élő) | `docker-compose logs -f` |
-| Logok (utolsó 100) | `docker-compose logs --tail 100` |
-| Státusz | `docker-compose ps` |
-| Erőforrás használat | `docker stats` |
-
-### 6.7 docker.env fájl formátum
-
-**FONTOS:** Docker env fájlban NEM kell `export`!
+### 6.4 Újraindítás
 
 ```bash
-# HELYES (Docker)
+docker-compose up -d
+```
+
+### 6.5 Config módosítás után
+
+```bash
+nano docker.env
+docker-compose up -d
+```
+
+### 6.6 Kód módosítás után (git pull)
+
+```bash
+docker-compose up -d --build
+```
+
+### 6.7 docker.env formátum
+
+```bash
 MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
 STRATEGY_ID=bounce_scalper_001
-
-# HELYTELEN (ez Python-hoz való!)
-export MONGODB_URI="mongodb://..."
+BINANCE_API_KEY=your_key
+BINANCE_API_SECRET=your_secret
+BINANCE_TESTNET=true
+WEBHOOK_URL=
+WEBHOOK_SECRET=
+LOG_LEVEL=INFO
 ```
+
+**NEM kell `export`!**
 
 ---
 
@@ -522,161 +480,60 @@ Részletes dokumentáció: [docs/MONGODB_API.md](docs/MONGODB_API.md)
 
 ## 10. VPS Deployment
 
-Hogyan deployold a trading rendszert a saját VPS szerveredre.
-
-### 10.1 Előfeltételek a VPS-en
+### 10.1 Docker telepítése (egyszer)
 
 ```bash
-# Docker telepítése (Ubuntu/Debian)
-sudo apt update
-sudo apt install -y docker.io docker-compose
-sudo systemctl enable docker
-sudo systemctl start docker
-
-# Felhasználó hozzáadása a docker csoporthoz (logout/login kell utána!)
+sudo apt update && sudo apt install -y docker.io docker-compose
 sudo usermod -aG docker $USER
+# Logout/login kell utána!
 ```
 
-### 10.2 Kód feltöltése a VPS-re
-
-**Opció A: Git clone (ajánlott)**
+### 10.2 Kód feltöltése
 
 ```bash
-# VPS-en
-cd ~
 git clone https://github.com/YOUR_USERNAME/kebo-trade.git
 cd kebo-trade
 ```
 
-**Opció B: SCP-vel másolás**
+### 10.3 Első indítás
 
 ```bash
-# Lokálisan (macOS)
-cd /Users/kuligabor/git/kebo-trade-wrapper
-scp -r kebo-trade user@your-vps-ip:~/
-```
-
-**Opció C: rsync (gyorsabb nagy fájloknál)**
-
-```bash
-# Lokálisan
-rsync -avz --exclude '.git' --exclude '__pycache__' --exclude 'venv' \
-  kebo-trade/ user@your-vps-ip:~/kebo-trade/
-```
-
-### 10.3 Indítás (build + futtatás egyben)
-
-```bash
-# VPS-en
-cd ~/kebo-trade
-
-# Ez MINDENT megcsinál: buildel ÉS indít!
-docker-compose up -d --build
-```
-
-**Ennyi!** A `--build` flag automatikusan buildeli az image-et, majd elindítja.
-
-Utána logok:
-```bash
-docker-compose logs -f
-```
-
-### 10.4 Env fájl létrehozása a VPS-en
-
-```bash
-# VPS-en
-cd ~/kebo-trade
-
-# Hozz létre docker.env fájlt
+cp env-examples/docker.env.example docker.env
 nano docker.env
-```
-
-Tartalom:
-```bash
-MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
-MONGODB_ENABLED=true
-STRATEGY_ID=bounce_scalper_live_001
-BINANCE_API_KEY=your_real_api_key
-BINANCE_API_SECRET=your_real_api_secret
-BINANCE_TESTNET=false
-WEBHOOK_URL=http://your-backend:3000/api/trading/webhook
-LOG_LEVEL=INFO
-```
-
-### 10.5 Több stratégia indítása
-
-```bash
-# Hozz létre docker-001.env és docker-002.env fájlokat
-docker-compose -f docker-compose.multi.yml up -d --build
-```
-
-### 10.6 Stratégia leállítása
-
-```bash
-# Graceful shutdown (elmenti az állapotot)
-docker-compose down
-
-# Vagy több stratégia esetén
-docker-compose -f docker-compose.multi.yml down
-```
-
-### 10.7 Logok és monitoring
-
-```bash
-# Élő logok
-docker logs -f kebo-trade
-
-# Utolsó 100 sor
-docker logs --tail 100 kebo-trade
-
-# Konténer státusz
-docker ps
-
-# Erőforrás használat
-docker stats kebo-trade
-```
-
-### 10.8 Automatikus újraindítás
-
-A `docker-compose.yml` már tartalmazza: `restart: unless-stopped`
-
-Ez azt jelenti:
-- VPS újraindítás után automatikusan elindul
-- Crash után automatikusan újraindul
-- Csak manuális `docker stop` után nem indul újra
-
-### 10.9 Frissítés deployolása
-
-```bash
-# VPS-en
-cd ~/kebo-trade
-
-# Legújabb kód letöltése
-git pull origin develop
-
-# Újraépítés és indítás (egy parancs!)
 docker-compose up -d --build
+```
 
-# Ellenőrzés
+### 10.4 Logok
+
+```bash
 docker-compose logs -f
 ```
 
-### 10.10 Lokális image push-olása (alternatíva)
-
-Ha nem akarsz a VPS-en buildelni:
+### 10.5 Leállítás
 
 ```bash
-# Lokálisan (macOS) - cross-platform build
-docker buildx build --platform linux/amd64 -t kebo-trade:latest --load .
+docker-compose down
+```
 
-# Image mentése
-docker save kebo-trade:latest | gzip > kebo-trade.tar.gz
+### 10.6 Újraindítás
 
-# Feltöltés VPS-re
-scp kebo-trade.tar.gz user@your-vps-ip:~/
+```bash
+docker-compose up -d
+```
 
-# VPS-en betöltés
-docker load < kebo-trade.tar.gz
+### 10.7 Frissítés (git pull után)
+
+```bash
+git pull origin develop
+docker-compose up -d --build
+```
+
+### 10.8 Több stratégia
+
+```bash
+nano docker-001.env
+nano docker-002.env
+docker-compose -f docker-compose.multi.yml up -d --build
 ```
 
 ---
