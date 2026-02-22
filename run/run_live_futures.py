@@ -179,17 +179,6 @@ async def main():
     node.trader.add_strategy(strategy)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # START NODE
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    print("\n" + "-" * 60)
-    print("STARTING NODE")
-    node.run_async()
-
-    # Wait for initialization
-    await asyncio.sleep(5)
-
-    # ═══════════════════════════════════════════════════════════════════════════
     # STARTUP SYNC
     # ═══════════════════════════════════════════════════════════════════════════
 
@@ -218,9 +207,14 @@ async def main():
     signal.signal(signal.SIGTERM, handle_shutdown)
 
     print("\n" + "=" * 60)
+    print("🚀 STARTING - Futures USDC Margin")
+    print("=" * 60)
+
+    # Start node in background thread (blocking call)
+    node_task = asyncio.create_task(asyncio.to_thread(node.run))
+
     print("✅ RUNNING - Futures USDC Margin")
     print("Press Ctrl+C to stop")
-    print("=" * 60)
 
     try:
         await shutdown_event.wait()
