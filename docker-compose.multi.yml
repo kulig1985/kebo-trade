@@ -1,22 +1,49 @@
-# Több stratégia futtatása párhuzamosan
+# ============================================================================
+# Kebo Trade - Docker Compose (több stratégia)
+# ============================================================================
 #
-# Használat:
-#   docker-compose -f docker-compose.multi.yml up -d
-#   docker-compose -f docker-compose.multi.yml logs -f
-#   docker-compose -f docker-compose.multi.yml down
+# ELŐKÉSZÜLET:
+#   1. Hozz létre env fájlokat minden stratégiához:
+#      - docker-001.env
+#      - docker-002.env
+#
+# docker-001.env tartalma:
+#   MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
+#   MONGODB_ENABLED=true
+#   STRATEGY_ID=bounce_scalper_001
+#   BINANCE_API_KEY=your_key
+#   BINANCE_API_SECRET=your_secret
+#   BINANCE_TESTNET=true
+#   WEBHOOK_URL=
+#   LOG_LEVEL=INFO
+#
+# docker-002.env tartalma:
+#   MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
+#   MONGODB_ENABLED=true
+#   STRATEGY_ID=bounce_scalper_002    # <-- MÁS STRATEGY_ID!
+#   BINANCE_API_KEY=your_key
+#   BINANCE_API_SECRET=your_secret
+#   BINANCE_TESTNET=true
+#   WEBHOOK_URL=
+#   LOG_LEVEL=INFO
+#
+# HASZNÁLAT:
+#   docker-compose -f docker-compose.multi.yml up -d      # Indítás
+#   docker-compose -f docker-compose.multi.yml logs -f    # Logok
+#   docker-compose -f docker-compose.multi.yml down       # Leállítás
+#
+#   # Csak egy stratégia logjait:
+#   docker logs -f bounce-001
+#   docker logs -f bounce-002
+#
+# ============================================================================
 
 services:
   bounce-001:
     image: kebo-trade:latest
-    container_name: bounce-scalper-001
-    environment:
-      - MONGODB_URI=${MONGODB_URI}
-      - BINANCE_API_KEY=${BINANCE_API_KEY}
-      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
-      - BINANCE_TESTNET=${BINANCE_TESTNET:-true}
-      - STRATEGY_ID=bounce_scalper_001
-      - WEBHOOK_URL=${WEBHOOK_URL:-}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    container_name: bounce-001
+    env_file:
+      - docker-001.env
     restart: unless-stopped
     logging:
       driver: json-file
@@ -26,15 +53,9 @@ services:
 
   bounce-002:
     image: kebo-trade:latest
-    container_name: bounce-scalper-002
-    environment:
-      - MONGODB_URI=${MONGODB_URI}
-      - BINANCE_API_KEY=${BINANCE_API_KEY}
-      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
-      - BINANCE_TESTNET=${BINANCE_TESTNET:-true}
-      - STRATEGY_ID=bounce_scalper_002
-      - WEBHOOK_URL=${WEBHOOK_URL:-}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    container_name: bounce-002
+    env_file:
+      - docker-002.env
     restart: unless-stopped
     logging:
       driver: json-file

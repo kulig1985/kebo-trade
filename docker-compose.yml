@@ -1,11 +1,28 @@
-# Kebo Trade - Docker Compose
+# ============================================================================
+# Kebo Trade - Docker Compose (egy stratégia)
+# ============================================================================
 #
-# Indítás:   docker-compose up -d
-# Logok:     docker-compose logs -f
-# Leállítás: docker-compose down
+# ELŐKÉSZÜLET:
+#   1. Hozz létre egy docker.env fájlt (NEM .env, mert az "export"-os!)
+#   2. Töltsd ki a változókat
 #
-# Több stratégia futtatása:
-#   STRATEGY_ID=my_strategy_001 docker-compose up -d
+# docker.env tartalma (NINCS "export"!):
+#   MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
+#   MONGODB_ENABLED=true
+#   STRATEGY_ID=bounce_scalper_001
+#   BINANCE_API_KEY=your_key
+#   BINANCE_API_SECRET=your_secret
+#   BINANCE_TESTNET=true
+#   WEBHOOK_URL=
+#   LOG_LEVEL=INFO
+#
+# HASZNÁLAT:
+#   docker-compose up -d           # Indítás
+#   docker-compose logs -f         # Logok
+#   docker-compose down            # Leállítás
+#   docker-compose up -d --build   # Újraépítés és indítás
+#
+# ============================================================================
 
 services:
   trader:
@@ -14,15 +31,11 @@ services:
       platforms:
         - linux/amd64
     image: kebo-trade:latest
-    container_name: kebo-trade-${STRATEGY_ID:-bounce_scalper_live_001}
+    container_name: kebo-trade
 
-    environment:
-      - MONGODB_URI
-      - STRATEGY_ID=${STRATEGY_ID:-bounce_scalper_live_001}
-      - BINANCE_API_KEY
-      - BINANCE_API_SECRET
-      - BINANCE_TESTNET=${BINANCE_TESTNET:-true}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    # Env fájl betöltése (docker.env - NINCS benne "export"!)
+    env_file:
+      - docker.env
 
     restart: unless-stopped
     stop_grace_period: 30s

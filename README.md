@@ -287,6 +287,8 @@ docker run --env-file docker.env kebo-trade:latest
 
 ### 6.4 docker-compose használata
 
+**Előkészület:** Hozz létre `docker.env` fájlt (lásd 6.3)!
+
 ```bash
 # Indítás
 docker-compose up -d
@@ -296,6 +298,9 @@ docker-compose logs -f
 
 # Leállítás
 docker-compose down
+
+# Újraépítés
+docker-compose up -d --build
 ```
 
 ### 6.5 Háttérben futtatás
@@ -383,9 +388,14 @@ docker run -d --name bounce-002 --env-file docker-002.env kebo-trade:latest
 
 ### 7.4 docker-compose.multi.yml használata
 
-```bash
-# Előtte: szerkeszd a .env fájlt a közös változókkal
+**Előkészület:** Hozz létre két env fájlt!
 
+1. `docker-001.env` (STRATEGY_ID=bounce_scalper_001)
+2. `docker-002.env` (STRATEGY_ID=bounce_scalper_002)
+
+Lásd: `env-examples/docker-001.env.example` és `docker-002.env.example`
+
+```bash
 # Indítás
 docker-compose -f docker-compose.multi.yml up -d
 
@@ -393,46 +403,11 @@ docker-compose -f docker-compose.multi.yml up -d
 docker-compose -f docker-compose.multi.yml logs -f
 
 # Csak egy stratégia logjait
-docker logs -f bounce-scalper-001
+docker logs -f bounce-001
+docker logs -f bounce-002
 
 # Leállítás
 docker-compose -f docker-compose.multi.yml down
-```
-
-### 7.5 Saját multi-compose készítése
-
-Hozz létre `my-strategies.yml` fájlt:
-
-```yaml
-services:
-  btc-scalper:
-    image: kebo-trade:latest
-    container_name: btc-scalper
-    environment:
-      - MONGODB_URI=${MONGODB_URI}
-      - STRATEGY_ID=btc_scalper_001
-      - BINANCE_API_KEY=${BINANCE_API_KEY}
-      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
-      - BINANCE_TESTNET=true
-    restart: unless-stopped
-
-  eth-scalper:
-    image: kebo-trade:latest
-    container_name: eth-scalper
-    environment:
-      - MONGODB_URI=${MONGODB_URI}
-      - STRATEGY_ID=eth_scalper_001
-      - BINANCE_API_KEY=${BINANCE_API_KEY}
-      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
-      - BINANCE_TESTNET=true
-    restart: unless-stopped
-```
-
-Futtatás:
-
-```bash
-# .env fájl kell a közös változókhoz!
-docker-compose -f my-strategies.yml up -d
 ```
 
 ---
