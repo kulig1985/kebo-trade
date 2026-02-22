@@ -184,7 +184,7 @@ async def main():
     print("\n" + "-" * 60)
     print("STARTUP SYNC")
     sync_stats = await sync_service.sync_on_startup(
-        cache=node.trader.cache,
+        cache=node.cache,
         strategy_id=strategy_id,
         session_id=publisher.session_id,
     )
