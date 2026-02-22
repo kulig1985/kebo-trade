@@ -1,0 +1,43 @@
+# Több stratégia futtatása párhuzamosan
+#
+# Használat:
+#   docker-compose -f docker-compose.multi.yml up -d
+#   docker-compose -f docker-compose.multi.yml logs -f
+#   docker-compose -f docker-compose.multi.yml down
+
+services:
+  bounce-001:
+    image: kebo-trade:latest
+    container_name: bounce-scalper-001
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - BINANCE_TESTNET=${BINANCE_TESTNET:-true}
+      - STRATEGY_ID=bounce_scalper_001
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        max-file: 3
+
+  bounce-002:
+    image: kebo-trade:latest
+    container_name: bounce-scalper-002
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - BINANCE_TESTNET=${BINANCE_TESTNET:-true}
+      - STRATEGY_ID=bounce_scalper_002
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        max-file: 3
