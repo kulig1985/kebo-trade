@@ -62,7 +62,7 @@ async def main():
     strategy_id = os.environ.get("STRATEGY_ID", "bounce_scalper_futures_001")
 
     try:
-        config_data = await load_strategy_config(mongo_config, strategy_id)
+        config_data = await load_strategy_config(strategy_id, mongo_config)
     except ValueError as e:
         print(f"❌ {e}")
         return
