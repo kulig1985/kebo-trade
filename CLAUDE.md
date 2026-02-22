@@ -1,134 +1,102 @@
 # CLAUDE.md
 
-Ez a fájl útmutatást nyújt a Claude Code-nak a projektben való munkához.
+NautilusTrader alapú trading keretrendszer MongoDB persistence-el.
 
-## Projekt Áttekintés
-
-**Kebo Trade** - NautilusTrader alapú cryptocurrency trading keretrendszer MongoDB persistence-el.
-
-- **Keretrendszer:** NautilusTrader
-- **Piac:** Binance SPOT
-- **Adatbázis:** MongoDB (PyMongo Async API)
-- **Stratégiák:** Pluggable (BaseStrategy-ből származnak)
-
-## Architektúra
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Trading Stratégia                          │
-│                    (pl. BounceScalper)                          │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ extends
-┌────────────────────────────▼────────────────────────────────────┐
-│                       BaseStrategy                               │
-│  - MongoDB persistence (orders, fills, positions)               │
-│  - Kézi beavatkozás kezelés                                     │
-│  - State save/restore                                            │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ uses
-┌────────────────────────────▼────────────────────────────────────┐
-│                    MongoDBPublisher                              │
-│  - Fire-and-forget async queue                                  │
-│  - Háttér workerek (nem blokkolja a stratégiát)                │
-│  - Session tracking                                              │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Projekt Struktúra
+## Struktúra
 
 ```
 kebo-trade/
-├── persistence/                    # MongoDB persistence layer
-│   ├── __init__.py
-│   ├── config.py                   # MongoDBConfig
-│   ├── publisher.py                # MongoDBPublisher (async)
-│   └── sync.py                     # MongoDBSyncService (crash recovery)
+├── persistence/          # MongoDB layer
+│   ├── config.py         # MongoDBConfig
+│   ├── config_loader.py  # Config DB-ből
+│   ├── publisher.py      # Async publisher
+│   └── sync.py           # Crash recovery
 ├── strategies/
-│   ├── base_strategy.py            # Közös base class
-│   ├── bounce_scalper.py           # Bounce Scalper stratégia
-│   └── bounce_scalper_config.py    # Bounce Scalper konfig
+│   ├── base_strategy.py  # Base class
+│   └── bounce_scalper.py # Stratégia
 ├── run/
-│   ├── run_backtest.py             # Backtest futtatás
-│   └── run_live.py                 # Live trading
-├── data/
-│   ├── download_bounce_data.py     # Adat letöltő
-│   └── bounce_data/                # CSV-k (gitignore!)
-├── backtest_results/               # Riportok
-├── docs/
-│   └── BOUNCE_SCALPER.md           # Bounce Scalper dokumentáció
-├── README.md                       # Projekt dokumentáció
-├── CLAUDE.md                       # Ez a fájl
-├── requirements.txt                # Függőségek
-└── pyproject.toml                  # Projekt konfig
+│   ├── run_live.py       # Live trading
+│   ├── run_backtest.py   # Backtest
+│   └── manage_config.py  # Config kezelés
+├── Dockerfile
+└── docker-compose.yml
 ```
 
 ## Futtatás
 
-```bash
-cd /Users/kuligabor/git/kebo-trade-wrapper/kebo-trade
+### Python
 
-# Backtest (MongoDB kikapcsolva alapból)
+```bash
+# Backtest
 python run/run_backtest.py
 
-# Backtest MongoDB-vel
-MONGODB_ENABLED=true python run/run_backtest.py
-
-# Live (TESTNET)
-export BINANCE_API_KEY="your_key"
-export BINANCE_API_SECRET="your_secret"
-export BINANCE_TESTNET="true"
-python run/run_live.py
-
-# Live (VALÓS PÉNZ!)
-export BINANCE_TESTNET="false"
+# Live
+export MONGODB_URI="mongodb://user:pass@host:27017/db?authSource=admin"
+export BINANCE_API_KEY="..."
+export BINANCE_API_SECRET="..."
 python run/run_live.py
 ```
 
-## MongoDB Konfiguráció
+### Docker
 
-**Connection string:** Környezeti változóban (`MONGODB_URI`)
+```bash
+# Build
+docker build --platform linux/amd64 -t kebo-trade .
 
-**Collections:**
+# Run
+docker run -e MONGODB_URI="..." -e BINANCE_API_KEY="..." -e BINANCE_API_SECRET="..." kebo-trade
+
+# docker-compose
+docker-compose up -d
+```
+
+## Config kezelés
+
+```bash
+# Config feltöltése DB-be
+python run/manage_config.py upload bounce_scalper_live_001
+
+# Configok listázása
+python run/manage_config.py list
+
+# Config lekérése
+python run/manage_config.py get bounce_scalper_live_001
+```
+
+## Környezeti változók
+
+| Változó | Leírás | Kötelező |
+|---------|--------|----------|
+| MONGODB_URI | Connection string | ✓ |
+| STRATEGY_ID | Stratégia azonosító | - |
+| BINANCE_API_KEY | API key | ✓ (live) |
+| BINANCE_API_SECRET | API secret | ✓ (live) |
+| BINANCE_TESTNET | "true"/"false" | - |
+| LOG_LEVEL | INFO/DEBUG | - |
+
+## MongoDB Collections
+
 | Collection | Tartalom |
 |------------|----------|
-| `orders` | Order események |
-| `fills` | Fill események |
-| `positions` | Pozíciók (OPEN/CLOSED) |
-| `sessions` | Session tracking |
-| `balances` | Balance snapshots (live) |
-| `heartbeat` | Heartbeat (live) |
-| `errors` | Hibák/figyelmeztetések |
+| strategy_configs | Stratégia konfigurációk |
+| orders | Order események |
+| fills | Fill események |
+| positions | Pozíciók |
+| sessions | Session tracking |
+| balances | Balance snapshots |
+| heartbeat | Heartbeat |
+| errors | Hibák |
 
-**Környezeti változók:**
-- `MONGODB_URI` - Custom connection string
-- `MONGODB_ENABLED` - "true"/"false" (backtest-nél alapból false)
+## Több stratégia futtatása
 
-## Új Stratégia Létrehozása
+```bash
+# Strategy 1
+STRATEGY_ID=bounce_scalper_001 python run/run_live.py &
 
-```python
-from strategies.base_strategy import BaseStrategy
+# Strategy 2
+STRATEGY_ID=bounce_scalper_002 python run/run_live.py &
 
-class MyStrategy(BaseStrategy):
-    def __init__(self, config):
-        super().__init__(config)
-
-    def on_bar(self, bar):
-        # Stratégia logika
-        pass
-
-    def _get_balance_snapshot(self) -> dict:
-        # Balance adatok (live heartbeat-hez)
-        return {"total_usdc": 1000.0}
-
-    def _get_heartbeat_data(self) -> dict:
-        # Stratégia állapot (live heartbeat-hez)
-        return {"active_positions": 2}
+# Docker-ben
+STRATEGY_ID=bounce_scalper_001 docker-compose up -d
+STRATEGY_ID=bounce_scalper_002 docker-compose up -d
 ```
-
-## Fontos
-
-- CSV fájlok .gitignore-ban vannak
-- API kulcsok környezeti változókban
-- Először TESTNET-en tesztelj
-- MongoDB: PyMongo Async API (Motor deprecated 2026 májusában)
-- A stratégia SOHA nem blokkolódik DB írásra (fire-and-forget queue)

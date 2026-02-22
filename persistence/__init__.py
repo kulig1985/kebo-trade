@@ -12,6 +12,7 @@ Komponensek:
 """
 
 from persistence.config import MongoDBConfig
+from persistence.config_loader import load_strategy_config, save_strategy_config
 from persistence.publisher import MongoDBPublisher
 from persistence.sync import MongoDBSyncService
 
@@ -19,4 +20,6 @@ __all__ = [
     "MongoDBConfig",
     "MongoDBPublisher",
     "MongoDBSyncService",
+    "load_strategy_config",
+    "save_strategy_config",
 ]
