@@ -120,7 +120,7 @@ async def main():
             "BINANCE": BinanceDataClientConfig(
                 api_key=api_key,
                 api_secret=api_secret,
-                account_type=BinanceAccountType.USDT_MARGIN,  # USD-M Futures (works with USDC too)
+                account_type=BinanceAccountType.USDT_FUTURES,  # USD-M Futures (works with USDC too)
                 testnet=is_testnet,
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
@@ -129,7 +129,7 @@ async def main():
             "BINANCE": BinanceExecClientConfig(
                 api_key=api_key,
                 api_secret=api_secret,
-                account_type=BinanceAccountType.USDT_MARGIN,  # USD-M Futures
+                account_type=BinanceAccountType.USDT_FUTURES,  # USD-M Futures
                 testnet=is_testnet,
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
