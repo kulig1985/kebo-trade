@@ -48,8 +48,8 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: 50m
-        max-file: 3
+        max-size: "50m"
+        max-file: "3"
 
   bounce-002:
     image: kebo-trade:latest
@@ -60,5 +60,5 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: 50m
-        max-file: 3
+        max-size: "50m"
+        max-file: "3"
