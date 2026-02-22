@@ -15,7 +15,8 @@ NautilusTrader alapú cryptocurrency trading rendszer MongoDB persistence-el.
 7. [Több stratégia futtatása](#7-több-stratégia-futtatása)
 8. [Webhook notification](#8-webhook-notification)
 9. [MongoDB collections](#9-mongodb-collections)
-10. [Hibaelhárítás](#10-hibaelhárítás)
+10. [VPS Deployment](#10-vps-deployment)
+11. [Hibaelhárítás](#11-hibaelhárítás)
 
 ---
 
@@ -480,7 +481,170 @@ Részletes dokumentáció: [docs/MONGODB_API.md](docs/MONGODB_API.md)
 
 ---
 
-## 10. Hibaelhárítás
+## 10. VPS Deployment
+
+Hogyan deployold a trading rendszert a saját VPS szerveredre.
+
+### 10.1 Előfeltételek a VPS-en
+
+```bash
+# Docker telepítése (Ubuntu/Debian)
+sudo apt update
+sudo apt install -y docker.io docker-compose
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# Felhasználó hozzáadása a docker csoporthoz (logout/login kell utána!)
+sudo usermod -aG docker $USER
+```
+
+### 10.2 Kód feltöltése a VPS-re
+
+**Opció A: Git clone (ajánlott)**
+
+```bash
+# VPS-en
+cd ~
+git clone https://github.com/YOUR_USERNAME/kebo-trade.git
+cd kebo-trade
+```
+
+**Opció B: SCP-vel másolás**
+
+```bash
+# Lokálisan (macOS)
+cd /Users/kuligabor/git/kebo-trade-wrapper
+scp -r kebo-trade user@your-vps-ip:~/
+```
+
+**Opció C: rsync (gyorsabb nagy fájloknál)**
+
+```bash
+# Lokálisan
+rsync -avz --exclude '.git' --exclude '__pycache__' --exclude 'venv' \
+  kebo-trade/ user@your-vps-ip:~/kebo-trade/
+```
+
+### 10.3 Docker image buildelése a VPS-en
+
+```bash
+# VPS-en
+cd ~/kebo-trade
+docker build --platform linux/amd64 -t kebo-trade:latest .
+```
+
+**FONTOS:** A `--platform linux/amd64` flag macOS-en (M1/M2) buildelt image-nél is kell, hogy a VPS-en fusson!
+
+### 10.4 Env fájl létrehozása a VPS-en
+
+```bash
+# VPS-en
+cd ~/kebo-trade
+
+# Hozz létre docker.env fájlt
+nano docker.env
+```
+
+Tartalom:
+```bash
+MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
+MONGODB_ENABLED=true
+STRATEGY_ID=bounce_scalper_live_001
+BINANCE_API_KEY=your_real_api_key
+BINANCE_API_SECRET=your_real_api_secret
+BINANCE_TESTNET=false
+WEBHOOK_URL=http://your-backend:3000/api/trading/webhook
+LOG_LEVEL=INFO
+```
+
+### 10.5 Stratégia indítása
+
+**Egy stratégia:**
+```bash
+docker-compose up -d
+docker logs -f kebo-trade
+```
+
+**Több stratégia:**
+```bash
+# Hozz létre docker-001.env és docker-002.env fájlokat
+docker-compose -f docker-compose.multi.yml up -d
+```
+
+### 10.6 Stratégia leállítása
+
+```bash
+# Graceful shutdown (elmenti az állapotot)
+docker-compose down
+
+# Vagy több stratégia esetén
+docker-compose -f docker-compose.multi.yml down
+```
+
+### 10.7 Logok és monitoring
+
+```bash
+# Élő logok
+docker logs -f kebo-trade
+
+# Utolsó 100 sor
+docker logs --tail 100 kebo-trade
+
+# Konténer státusz
+docker ps
+
+# Erőforrás használat
+docker stats kebo-trade
+```
+
+### 10.8 Automatikus újraindítás
+
+A `docker-compose.yml` már tartalmazza: `restart: unless-stopped`
+
+Ez azt jelenti:
+- VPS újraindítás után automatikusan elindul
+- Crash után automatikusan újraindul
+- Csak manuális `docker stop` után nem indul újra
+
+### 10.9 Frissítés deployolása
+
+```bash
+# VPS-en
+cd ~/kebo-trade
+
+# Legújabb kód letöltése
+git pull origin develop
+
+# Új image buildelése és újraindítás
+docker-compose down
+docker build --platform linux/amd64 -t kebo-trade:latest .
+docker-compose up -d
+
+# Ellenőrzés
+docker logs -f kebo-trade
+```
+
+### 10.10 Lokális image push-olása (alternatíva)
+
+Ha nem akarsz a VPS-en buildelni:
+
+```bash
+# Lokálisan (macOS) - cross-platform build
+docker buildx build --platform linux/amd64 -t kebo-trade:latest --load .
+
+# Image mentése
+docker save kebo-trade:latest | gzip > kebo-trade.tar.gz
+
+# Feltöltés VPS-re
+scp kebo-trade.tar.gz user@your-vps-ip:~/
+
+# VPS-en betöltés
+docker load < kebo-trade.tar.gz
+```
+
+---
+
+## 11. Hibaelhárítás
 
 ### "MONGODB_URI not set!"
 
