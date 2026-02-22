@@ -30,6 +30,8 @@ Database: nautilus
 
 A Python trading rendszer minden DB írás után HTTP POST-ot küld a backend-nek.
 
+**FONTOS:** Webhook **csak LIVE módban** működik! Backtest-ben automatikusan kikapcsolt (több ezer esemény futna le másodpercek alatt).
+
 ### Konfiguráció (Python oldalon)
 
 ```bash

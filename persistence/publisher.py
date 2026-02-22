@@ -132,13 +132,16 @@ class MongoDBPublisher:
         self._running = True
         self._started_at = datetime.now(UTC)
 
-        # HTTP session (webhook-hoz)
-        if self.config.webhook_url:
+        # HTTP session (webhook-hoz) - CSAK LIVE módban!
+        # Backtest-ben nincs értelme webhook-ot küldeni (túl sok esemény)
+        if self.config.webhook_url and not self.is_backtest:
             timeout = aiohttp.ClientTimeout(
                 total=self.config.webhook_timeout_ms / 1000
             )
             self._http_session = aiohttp.ClientSession(timeout=timeout)
             logger.info(f"Webhook enabled: {self.config.webhook_url}")
+        elif self.config.webhook_url and self.is_backtest:
+            logger.info("Webhook disabled in backtest mode")
 
         # Session rögzítése
         await self._record_session_start()

@@ -418,6 +418,8 @@ docker-compose -f docker-compose.multi.yml down
 
 Ha be van állítva `WEBHOOK_URL`, minden MongoDB írás után HTTP POST megy a megadott URL-re.
 
+**FONTOS:** Webhook **csak LIVE módban** működik! Backtest-ben automatikusan ki van kapcsolva (túl sok esemény lenne).
+
 Használat: A NestJS backend fogadja és WebSocket-en továbbítja a frontendnek.
 
 ### 8.2 Beállítás
