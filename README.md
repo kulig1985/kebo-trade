@@ -41,6 +41,7 @@ pip install -r requirements.txt
 | `BINANCE_API_KEY` | **IGEN** (live) | - | Binance API key |
 | `BINANCE_API_SECRET` | **IGEN** (live) | - | Binance API secret |
 | `BINANCE_TESTNET` | nem | `true` | Testnet mód |
+| `TRADING_MODE` | nem | `spot` | `spot` vagy `futures` |
 | `WEBHOOK_URL` | nem | - | Backend notification URL |
 | `WEBHOOK_SECRET` | nem | - | Webhook hitelesítő kulcs |
 | `LOG_LEVEL` | nem | `INFO` | Log szint |

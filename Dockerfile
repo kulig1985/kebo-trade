@@ -40,4 +40,7 @@ USER trader
 
 ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
 
-CMD ["python", "run/run_live.py"]
+# Default: SPOT. Use TRADING_MODE=futures for Futures USDC Margin
+ENV TRADING_MODE=spot
+
+CMD ["sh", "-c", "if [ \"$TRADING_MODE\" = 'futures' ]; then python run/run_live_futures.py; else python run/run_live.py; fi"]
