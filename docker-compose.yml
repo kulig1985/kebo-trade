@@ -28,8 +28,7 @@ services:
   trader:
     build:
       context: .
-      platforms:
-        - linux/amd64
+      # Platform: lásd README 10.3 - buildnél add meg: --platform linux/amd64
     image: kebo-trade:latest
     container_name: kebo-trade
 
