@@ -56,12 +56,9 @@ X-Webhook-Secret: your_shared_secret_key
 ```typescript
 interface WebhookPayload {
   event: string;          // Event típus: "orders", "order_update", "fills", stb.
-  collection: string;     // MongoDB collection neve
   strategy_id: string;    // Stratégia azonosító
-  session_id: string;     // Session UUID
-  is_backtest: boolean;   // true = backtest, false = live
-  timestamp: string;      // ISO 8601 formátum
   data: object;           // Az esemény adatai
+  timestamp: string;      // ISO 8601 formátum
 }
 ```
 

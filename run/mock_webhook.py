@@ -216,7 +216,7 @@ def generate_error() -> dict[str, Any]:
 class MockWebhookSender:
     """Webhook események küldése a backend-nek."""
 
-    def __init__(self, url: str, secret: str, strategy_id: str = "mock_strategy_001"):
+    def __init__(self, url: str, secret: str, strategy_id: str = "mock_strategy_001", verbose: bool = False):
         self.url = url
         self.secret = secret
         self.strategy_id = strategy_id
@@ -224,6 +224,7 @@ class MockWebhookSender:
         self.session: aiohttp.ClientSession | None = None
         self.sent_count = 0
         self.error_count = 0
+        self.verbose = verbose
 
     async def start(self):
         """HTTP session indítása."""
@@ -248,12 +249,9 @@ class MockWebhookSender:
 
         payload = {
             "event": event_type,
-            "collection": self._get_collection(event_type),
             "strategy_id": self.strategy_id,
-            "session_id": self.session_id,
-            "is_backtest": False,
-            "timestamp": datetime.now(UTC).isoformat(),
             "data": data,
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         headers = {"Content-Type": "application/json"}
@@ -265,6 +263,21 @@ class MockWebhookSender:
                 self.sent_count += 1
                 status_icon = "✓" if response.status < 400 else "✗"
                 print(f"  {status_icon} [{response.status}] {event_type}: {self._summarize(event_type, data)}")
+
+                # Verbose: teljes response body kiírása hiba esetén
+                if self.verbose or response.status >= 400:
+                    try:
+                        body = await response.text()
+                        if body:
+                            print(f"      Response: {body[:500]}")
+                    except:
+                        pass
+
+                # Verbose: payload kiírása
+                if self.verbose:
+                    import json
+                    print(f"      Payload: {json.dumps(payload, default=str)[:500]}")
+
                 return response.status < 400
         except Exception as e:
             self.error_count += 1
@@ -409,6 +422,7 @@ async def main():
     parser.add_argument("--secret", default=os.environ.get("WEBHOOK_SECRET", ""), help="Webhook secret")
     parser.add_argument("--strategy-id", default="mock_strategy_001", help="Strategy ID")
     parser.add_argument("--duration", type=int, default=60, help="Szimuláció időtartama (másodperc)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Részletes kimenet (payload + response)")
     args = parser.parse_args()
 
     if not args.url:
@@ -423,7 +437,7 @@ async def main():
         print("  python run/mock_webhook.py --url http://localhost:3000/api/trading/webhook --secret your_secret")
         return
 
-    sender = MockWebhookSender(args.url, args.secret, args.strategy_id)
+    sender = MockWebhookSender(args.url, args.secret, args.strategy_id, verbose=args.verbose)
 
     try:
         await sender.start()

@@ -449,12 +449,9 @@ A backend ellenőrzi ezt a header-t, és elutasítja a kérést ha nem egyezik.
 ```json
 {
   "event": "orders",
-  "collection": "orders",
   "strategy_id": "bounce_scalper_001",
-  "session_id": "uuid...",
-  "is_backtest": false,
-  "timestamp": "2026-02-22T12:00:00.000Z",
-  "data": { ... }
+  "data": { ... },
+  "timestamp": "2026-02-22T12:00:00.000Z"
 }
 ```
 

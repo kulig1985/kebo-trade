@@ -500,15 +500,12 @@ class MongoDBPublisher:
         if self._http_session is None:
             return
 
-        # Payload összeállítása
+        # Payload összeállítása (backend DTO-nak megfelelően)
         payload = {
             "event": event_type,
-            "collection": self._get_collection_name(event_type),
             "strategy_id": self.strategy_id,
-            "session_id": self.session_id,
-            "is_backtest": self.is_backtest,
-            "timestamp": timestamp.isoformat(),
             "data": data,
+            "timestamp": timestamp.isoformat(),
         }
 
         # Headers (X-Webhook-Secret ha be van állítva)

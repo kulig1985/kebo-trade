@@ -6,7 +6,8 @@
       "Bash(tail:*)",
       "Bash(python:*)",
       "Bash(MONGODB_ENABLED=true python:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
