@@ -36,7 +36,20 @@ A Python trading rendszer minden DB írás után HTTP POST-ot küld a backend-ne
 
 ```bash
 export WEBHOOK_URL="http://your-nestjs-backend:3000/api/trading/webhook"
+export WEBHOOK_SECRET="your_shared_secret_key"
 ```
+
+### Hitelesítés
+
+A robot minden kéréshez hozzáadja az `X-Webhook-Secret` header-t:
+
+```
+POST /api/trading/webhook
+Content-Type: application/json
+X-Webhook-Secret: your_shared_secret_key
+```
+
+**FONTOS:** A `WEBHOOK_SECRET` értékének PONTOSAN meg kell egyeznie mindkét oldalon (Python robot és NestJS backend)!
 
 ### Webhook Payload
 

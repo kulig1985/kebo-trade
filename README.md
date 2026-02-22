@@ -42,6 +42,7 @@ pip install -r requirements.txt
 | `BINANCE_API_SECRET` | **IGEN** (live) | - | Binance API secret |
 | `BINANCE_TESTNET` | nem | `true` | Testnet mód |
 | `WEBHOOK_URL` | nem | - | Backend notification URL |
+| `WEBHOOK_SECRET` | nem | - | Webhook hitelesítő kulcs |
 | `LOG_LEVEL` | nem | `INFO` | Log szint |
 
 ### 2.2 .env fájl létrehozása
@@ -76,6 +77,7 @@ export BINANCE_API_KEY="your_api_key"
 export BINANCE_API_SECRET="your_api_secret"
 export BINANCE_TESTNET="true"
 export WEBHOOK_URL=""
+export WEBHOOK_SECRET=""
 export LOG_LEVEL="INFO"
 ```
 
@@ -428,14 +430,32 @@ Használat: A NestJS backend fogadja és WebSocket-en továbbítja a frontendnek
 .env fájlban:
 ```bash
 export WEBHOOK_URL="http://your-backend:3000/api/trading/webhook"
+export WEBHOOK_SECRET="your_secret_key_here"
 ```
+
+**FONTOS:** A `WEBHOOK_SECRET` értékének PONTOSAN meg kell egyeznie a backend `.env` fájljában beállított értékkel!
 
 Docker-ben:
 ```bash
-docker run -e WEBHOOK_URL="http://backend:3000/api/trading/webhook" ...
+docker run \
+  -e WEBHOOK_URL="http://backend:3000/api/trading/webhook" \
+  -e WEBHOOK_SECRET="your_secret_key_here" \
+  ...
 ```
 
-### 8.3 Webhook payload
+### 8.3 Hitelesítés
+
+A robot minden webhook kéréshez hozzáadja az `X-Webhook-Secret` header-t:
+
+```
+POST /api/trading/webhook
+Content-Type: application/json
+X-Webhook-Secret: your_secret_key_here
+```
+
+A backend ellenőrzi ezt a header-t, és elutasítja a kérést ha nem egyezik.
+
+### 8.4 Webhook payload
 
 ```json
 {
@@ -449,7 +469,7 @@ docker run -e WEBHOOK_URL="http://backend:3000/api/trading/webhook" ...
 }
 ```
 
-### 8.4 Event típusok
+### 8.5 Event típusok
 
 | Event | Mikor |
 |-------|-------|

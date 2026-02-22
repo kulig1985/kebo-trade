@@ -53,4 +53,7 @@ class MongoDBConfig:
     webhook_url: str = field(
         default_factory=lambda: os.environ.get("WEBHOOK_URL", "")
     )
+    webhook_secret: str = field(
+        default_factory=lambda: os.environ.get("WEBHOOK_SECRET", "")
+    )
     webhook_timeout_ms: int = 2000  # 2 sec timeout

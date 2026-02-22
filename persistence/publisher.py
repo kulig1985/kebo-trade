@@ -511,10 +511,16 @@ class MongoDBPublisher:
             "data": data,
         }
 
+        # Headers (X-Webhook-Secret ha be van állítva)
+        headers = {"Content-Type": "application/json"}
+        if self.config.webhook_secret:
+            headers["X-Webhook-Secret"] = self.config.webhook_secret
+
         try:
             async with self._http_session.post(
                 self.config.webhook_url,
                 json=payload,
+                headers=headers,
             ) as response:
                 if response.status >= 400:
                     logger.warning(
