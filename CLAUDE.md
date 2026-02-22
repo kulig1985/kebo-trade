@@ -86,7 +86,7 @@ python run/run_live.py
 
 ## MongoDB Konfiguráció
 
-**Connection string:** `Környezeti változóban (`MONGODB_URI`)`
+**Connection string:** Környezeti változóban (`MONGODB_URI`)
 
 **Collections:**
 | Collection | Tartalom |
