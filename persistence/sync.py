@@ -59,7 +59,7 @@ class MongoDBSyncService:
         Returns:
             Szinkronizálási statisztikák
         """
-        if not self._db:
+        if self._db is None:
             logger.info("MongoDB sync skipped (not connected)")
             return {"skipped": True}
 
@@ -230,7 +230,7 @@ class MongoDBSyncService:
         Returns:
             Session dokumentum vagy None
         """
-        if not self._db:
+        if self._db is None:
             return None
 
         return await self._db.sessions.find_one(
@@ -251,7 +251,7 @@ class MongoDBSyncService:
         Returns:
             Pozíció dokumentumok listája
         """
-        if not self._db:
+        if self._db is None:
             return []
 
         cursor = self._db.positions.find({
