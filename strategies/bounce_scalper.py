@@ -263,6 +263,11 @@ class BounceScalper(BaseStrategy):
         # Az indikátoroknak kell idő (történelmi adat), hogy inicializálódjanak
         if not state["ema"].initialized or not state["atr"].initialized:
             state["last_close"] = close_price
+            # Log waiting for warmup (every 10 bars)
+            warmup_count = state.get("warmup_count", 0) + 1
+            state["warmup_count"] = warmup_count
+            if warmup_count % 10 == 1:
+                self.log.info(f"[{instrument_id.symbol}] Waiting for indicator warmup...")
             return
 
         ema_value = state["ema"].value  # EMA aktuális értéke
@@ -294,6 +299,18 @@ class BounceScalper(BaseStrategy):
         # ═══════════════════════════════════════════════════════════════
         # ENTRY / EXIT LOGIKA
         # ═══════════════════════════════════════════════════════════════
+
+        # Periodic status log (every 20 bars per instrument)
+        bar_count = state.get("bar_count", 0) + 1
+        state["bar_count"] = bar_count
+        if bar_count % 20 == 0:
+            pos_status = "FLAT" if self.portfolio.is_flat(instrument_id) else f"POS: {self.portfolio.net_position(instrument_id)}"
+            self.log.info(
+                f"[{instrument_id.symbol}] Bar #{bar_count} | "
+                f"Close: {close_price:.2f} | EMA: {ema_value:.2f} | ATR: {atr_value:.2f} | "
+                f"Entry band: {entry_band:.2f} | {pos_status}"
+            )
+
         if self.portfolio.is_flat(instrument_id):
             # 🟢 NINCS POZÍCIÓ → Entry ellenőrzés
             self._check_entry(instrument_id, close_price, state)
