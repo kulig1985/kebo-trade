@@ -246,81 +246,100 @@ A rendszer a beépített default értékeket használja automatikusan.
 
 ## 6. Docker futtatás
 
-### 6.1 Image buildelése
+### 6.1 Gyors indítás (docker-compose)
 
 ```bash
-docker build --platform linux/amd64 -t kebo-trade:latest .
-```
+# 1. Env fájl létrehozása
+cp env-examples/docker.env.example docker.env
+nano docker.env  # Töltsd ki a saját értékeiddel!
 
-### 6.2 Egy stratégia futtatása
+# 2. Build és indítás
+docker-compose up -d --build
 
-```bash
-docker run \
-  -e MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin" \
-  -e MONGODB_ENABLED="true" \
-  -e STRATEGY_ID="bounce_scalper_001" \
-  -e BINANCE_API_KEY="your_key" \
-  -e BINANCE_API_SECRET="your_secret" \
-  -e BINANCE_TESTNET="true" \
-  kebo-trade:latest
-```
-
-### 6.3 .env fájllal futtatás
-
-**FONTOS:** Docker-hez az `--env-file` formátum más! Nem kell `export`:
-
-Hozz létre `docker.env` fájlt:
-
-```bash
-MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
-MONGODB_ENABLED=true
-STRATEGY_ID=bounce_scalper_001
-BINANCE_API_KEY=your_key
-BINANCE_API_SECRET=your_secret
-BINANCE_TESTNET=true
-WEBHOOK_URL=
-LOG_LEVEL=INFO
-```
-
-Futtatás:
-
-```bash
-docker run --env-file docker.env kebo-trade:latest
-```
-
-### 6.4 docker-compose használata
-
-**Előkészület:** Hozz létre `docker.env` fájlt (lásd 6.3)!
-
-```bash
-# Indítás
-docker-compose up -d
-
-# Logok
+# 3. Logok ellenőrzése
 docker-compose logs -f
+```
 
-# Leállítás
+### 6.2 Leállítás
+
+```bash
 docker-compose down
+```
 
-# Újraépítés
+### 6.3 Újraindítás (config változtatás után)
+
+```bash
+# 1. Szerkeszd a docker.env fájlt
+nano docker.env
+
+# 2. Újraindítás (nem kell újra buildelni!)
+docker-compose down && docker-compose up -d
+
+# 3. Ellenőrzés
+docker-compose logs -f
+```
+
+### 6.4 Újrabuildelés (kód változtatás után)
+
+```bash
+docker-compose down
 docker-compose up -d --build
 ```
 
-### 6.5 Háttérben futtatás
+### 6.5 Másik config fájl használata
+
+A `docker-compose.yml` alapból a `docker.env` fájlt használja.
+
+**Ha másik fájlt akarsz:**
 
 ```bash
+# 1. Másold és nevezd át
+cp docker.env docker-testnet.env
+cp docker.env docker-live.env
+
+# 2. Szerkeszd a docker-compose.yml-t
+#    env_file: - docker.env  -->  env_file: - docker-live.env
+nano docker-compose.yml
+
+# 3. Újraindítás
+docker-compose down && docker-compose up -d
+```
+
+**Vagy használd a docker run parancsot közvetlenül:**
+
+```bash
+# Tetszőleges env fájllal
 docker run -d \
   --name bounce-scalper \
   --restart unless-stopped \
-  --env-file docker.env \
+  --env-file docker-testnet.env \
   kebo-trade:latest
+```
 
-# Logok
-docker logs -f bounce-scalper
+### 6.6 Docker parancsok összefoglaló
 
-# Leállítás
-docker stop bounce-scalper
-docker rm bounce-scalper
+| Művelet | Parancs |
+|---------|---------|
+| Build + indítás | `docker-compose up -d --build` |
+| Csak indítás | `docker-compose up -d` |
+| Leállítás | `docker-compose down` |
+| Újraindítás | `docker-compose down && docker-compose up -d` |
+| Logok (élő) | `docker-compose logs -f` |
+| Logok (utolsó 100) | `docker-compose logs --tail 100` |
+| Státusz | `docker-compose ps` |
+| Erőforrás használat | `docker stats` |
+
+### 6.7 docker.env fájl formátum
+
+**FONTOS:** Docker env fájlban NEM kell `export`!
+
+```bash
+# HELYES (Docker)
+MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
+STRATEGY_ID=bounce_scalper_001
+
+# HELYTELEN (ez Python-hoz való!)
+export MONGODB_URI="mongodb://..."
 ```
 
 ---
