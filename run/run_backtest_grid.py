@@ -65,14 +65,14 @@ RESULTS_DIR.mkdir(exist_ok=True)
 TIMEFRAME = "15m"
 
 # Trading pár (egyetlen instrumentum)
-SYMBOL = "BTC/USDC"
+SYMBOL = "SOL/USDC"
 
 # Backtest időszak
-START_DATE = "20250101"
-END_DATE = "20260222"
+START_DATE = "20260101"
+END_DATE = "20260223"
 
 # Kezdő egyenleg
-STARTING_USDC = 1000.0
+STARTING_USDC = 100
 
 # Stratégia azonosító
 STRATEGY_TYPE = "grid_strategy"
@@ -389,33 +389,59 @@ async def run_backtest_async():
 
     config = GridStrategyConfig(
         instrument_id=instrument.id,
-        # Grid paraméterek
-        grid_levels=15,
-        order_quantity=Decimal("0.001"),  # 0.001 BTC per grid order
-        grid_offset_pct=Decimal("8.0"),  # ±4% az aktuális ár körül
-        take_profit_pct=Decimal("1.2"),
-        stop_loss_pct=Decimal("2.0"),
-        # Újraközpontosítás
-        recenter_drift_threshold_pct=Decimal("3.0"),
-        recenter_interval_seconds=300,
-        # Kockázatkezelés
-        breakout_threshold_pct=Decimal("6.0"),
-        trailing_stop_threshold_pct=Decimal("8.0"),
-        max_drawdown_pct=Decimal("15.0"),
-        max_long_notional=Decimal("800.0"),
-        max_short_notional=Decimal("800.0"),
-        max_total_notional=Decimal("1200.0"),
-        # Funkciók
-        volatility_adapt_offset=True,
-        enable_breakout_stop=True,
+        # ══════════════════════════════════════════════════════════════════
+        # ORDER MÉRETEZÉS
+        # ══════════════════════════════════════════════════════════════════
+        order_size_usdc=Decimal("10.0"),  # 10 USDC per order
+
+        # ══════════════════════════════════════════════════════════════════
+        # GRID PARAMÉTEREK - SOL/USDC optimalizált
+        # ══════════════════════════════════════════════════════════════════
+        # SOL volatilisebb mint BTC, ezért:
+        # - Szűkebb TP (gyorsabban realizálunk profitot)
+        # - Tágabb SL (több teret adunk a pozíciónak)
+        # - Szűkebb grid (több fill esély)
+        grid_levels=10,                   # Több szint = több esély
+        grid_offset_pct=Decimal("4.0"),   # ±2% grid szélesség (szűkebb)
+        take_profit_pct=Decimal("0.5"),   # 0.5% TP - gyors scalp
+        stop_loss_pct=Decimal("2.5"),     # 2.5% SL - több tér
+
+        # ══════════════════════════════════════════════════════════════════
+        # ÚJRAKÖZPONTOSÍTÁS - lassabb, hogy ne szakítsuk meg a trade-eket
+        # ══════════════════════════════════════════════════════════════════
+        recenter_drift_threshold_pct=Decimal("4.0"),  # Nagyobb drift tűrés
+        recenter_interval_seconds=600,                 # 10 perc
+
+        # ══════════════════════════════════════════════════════════════════
+        # KOCKÁZATKEZELÉS - lazább, hogy ne álljon le túl gyakran
+        # ══════════════════════════════════════════════════════════════════
+        breakout_threshold_pct=Decimal("8.0"),   # Nagyobb tolerancia
+        trailing_stop_threshold_pct=Decimal("10.0"),
+        max_drawdown_pct=Decimal("20.0"),        # Lazább drawdown limit
+        max_long_notional=Decimal("500.0"),
+        max_short_notional=Decimal("500.0"),
+        max_total_notional=Decimal("800.0"),
+
+        # ══════════════════════════════════════════════════════════════════
+        # FUNKCIÓK - minimális beavatkozás
+        # ══════════════════════════════════════════════════════════════════
+        volatility_adapt_offset=False,    # Fix grid szélesség
+        enable_breakout_stop=False,       # Ne álljon le breakout-nál
         enable_exposure_limits=True,
-        enable_trailing_stop=True,
-        enable_max_drawdown=True,
+        enable_trailing_stop=False,
+        enable_max_drawdown=False,        # Ne álljon le drawdown-nál
         enable_auto_resume=True,
-        enable_dynamic_grid_levels=True,
-        # Dinamikus grid
+        enable_dynamic_grid_levels=False,
+
+        # ══════════════════════════════════════════════════════════════════
+        # DINAMIKUS GRID
+        # ══════════════════════════════════════════════════════════════════
         min_grid_levels=5,
-        max_grid_levels=30,
+        max_grid_levels=15,
+
+        # ══════════════════════════════════════════════════════════════════
+        # INDIKÁTOROK
+        # ══════════════════════════════════════════════════════════════════
         # Indikátorok
         atr_period=14,
         sma_fast_period=9,
@@ -424,7 +450,10 @@ async def run_backtest_async():
 
     print(f"   ✓ Grid levels: {config.grid_levels}")
     print(f"   ✓ Grid offset: ±{config.grid_offset_pct / 2}%")
-    print(f"   ✓ Order quantity: {config.order_quantity}")
+    if config.order_size_usdc:
+        print(f"   ✓ Order size: {config.order_size_usdc} USDC")
+    else:
+        print(f"   ✓ Order quantity: {config.order_quantity}")
     print(f"   ✓ Take Profit: {config.take_profit_pct}%")
     print(f"   ✓ Stop Loss: {config.stop_loss_pct}%")
     print(f"   ✓ ATR period: {config.atr_period}")

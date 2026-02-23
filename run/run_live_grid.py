@@ -106,7 +106,10 @@ async def main():
     print(f"Environment: {binance_env.name}")
     print(f"Account Type: USDC MARGIN (Futures)")
     print(f"Grid levels: {params.get('grid_levels', 15)}")
-    print(f"Order quantity: {params.get('order_quantity', 0.001)}")
+    if params.get("order_size_usdc"):
+        print(f"Order size: {params.get('order_size_usdc')} USDC")
+    else:
+        print(f"Order quantity: {params.get('order_quantity', 0.001)}")
 
     # ═══════════════════════════════════════════════════════════════════════
     # MONGODB PUBLISHER
@@ -164,11 +167,17 @@ async def main():
     instrument_id = InstrumentId.from_str(f"{symbol}-PERP.BINANCE")
 
     # Strategy config
+    # USDC alapú order méretezés (ha meg van adva)
+    order_size_usdc = params.get("order_size_usdc")
+    if order_size_usdc:
+        order_size_usdc = Decimal(str(order_size_usdc))
+
     strategy_config = GridStrategyConfig(
         instrument_id=instrument_id,
         # Grid paraméterek
         grid_levels=params.get("grid_levels", 15),
         order_quantity=Decimal(str(params.get("order_quantity", 0.001))),
+        order_size_usdc=order_size_usdc,  # USDC alapú méretezés
         grid_offset_pct=Decimal(str(params.get("grid_offset_pct", 8.0))),
         take_profit_pct=Decimal(str(params.get("take_profit_pct", 1.2))),
         stop_loss_pct=Decimal(str(params.get("stop_loss_pct", 2.0))),

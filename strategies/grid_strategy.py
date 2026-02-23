@@ -139,6 +139,7 @@ class GridStrategy(BaseStrategy):
 
         self.grid_levels = config.grid_levels
         self.order_quantity = config.order_quantity
+        self.order_size_usdc = config.order_size_usdc  # USDC alapú méretezés
         self.base_grid_offset = config.grid_offset_pct / Decimal("100")
         self.take_profit_pct = config.take_profit_pct / Decimal("100")
         self.stop_loss_pct = config.stop_loss_pct / Decimal("100")
@@ -288,7 +289,10 @@ class GridStrategy(BaseStrategy):
         # Pozíció zárása
         position = self._get_position()
         if position and not position.is_closed:
-            qty = abs(position.quantity)
+            qty = Quantity(
+                value=float(abs(position.quantity)),
+                precision=self.instrument.size_precision,
+            )
             side = OrderSide.SELL if float(position.quantity) > 0 else OrderSide.BUY
             close_order = self.order_factory.market(
                 instrument_id=self.instrument_id,
@@ -950,11 +954,25 @@ class GridStrategy(BaseStrategy):
         )
 
     def _make_quantity(self) -> Quantity:
-        """Quantity objektum létrehozása megfelelő precizitással."""
-        qty = Quantity(
-            value=float(self.order_quantity),
-            precision=self.instrument.size_precision,
-        )
+        """
+        Quantity objektum létrehozása megfelelő precizitással.
+
+        Ha order_size_usdc meg van adva, akkor az aktuális ár alapján
+        számítja a quantity-t: qty = order_size_usdc / current_price
+        """
+        if self.order_size_usdc and self.order_size_usdc > 0 and self.current_mid_price:
+            # USDC alapú méretezés
+            calculated_qty = self.order_size_usdc / self.current_mid_price
+            qty = Quantity(
+                value=float(calculated_qty),
+                precision=self.instrument.size_precision,
+            )
+        else:
+            # Hagyományos BASE currency alapú méretezés
+            qty = Quantity(
+                value=float(self.order_quantity),
+                precision=self.instrument.size_precision,
+            )
 
         if qty < self.instrument.min_quantity:
             self.log.warning(

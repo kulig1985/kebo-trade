@@ -1,0 +1,48 @@
+{
+    "strategy_id": "grid_sol_50usdc",
+    "strategy_type": "grid",
+    "symbol": "SOLUSDC",
+    "description": "SOL/USDC Grid Strategy - Max 50 USDC exposure",
+    "parameters": {
+        "_comment_order_sizing": "========== ORDER MÉRETEZÉS ==========",
+        "order_size_usdc": 5.0,
+        "_comment_order_size": "5 USDC per grid order",
+
+        "_comment_grid": "========== GRID PARAMÉTEREK ==========",
+        "grid_levels": 5,
+        "grid_offset_pct": 4.0,
+        "take_profit_pct": 0.5,
+        "stop_loss_pct": 2.5,
+        "_comment_exposure": "Max exposure: 5 levels x 5 USDC = 25 USDC per side, 50 USDC total",
+
+        "_comment_recenter": "========== ÚJRAKÖZPONTOSÍTÁS ==========",
+        "recenter_drift_threshold_pct": 4.0,
+        "recenter_interval_seconds": 600,
+
+        "_comment_risk": "========== KOCKÁZATKEZELÉS ==========",
+        "breakout_threshold_pct": 8.0,
+        "trailing_stop_threshold_pct": 10.0,
+        "max_drawdown_pct": 20.0,
+        "max_long_notional": 30.0,
+        "max_short_notional": 30.0,
+        "max_total_notional": 50.0,
+
+        "_comment_features": "========== FUNKCIÓK ==========",
+        "volatility_adapt_offset": false,
+        "enable_breakout_stop": true,
+        "enable_exposure_limits": true,
+        "enable_trailing_stop": false,
+        "enable_max_drawdown": true,
+        "enable_auto_resume": true,
+        "enable_dynamic_grid_levels": false,
+
+        "_comment_dynamic": "========== DINAMIKUS GRID ==========",
+        "min_grid_levels": 3,
+        "max_grid_levels": 8,
+
+        "_comment_indicators": "========== INDIKÁTOROK ==========",
+        "atr_period": 14,
+        "sma_fast_period": 9,
+        "sma_slow_period": 21
+    }
+}

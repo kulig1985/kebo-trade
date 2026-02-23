@@ -35,8 +35,14 @@ class GridStrategyConfig(StrategyConfig, frozen=True):
     # Grid szintek száma (mindkét irányba)
     grid_levels: int = 15
 
-    # Order mennyiség (az instrument quote currency-jében)
+    # Order mennyiség (BASE currency-ben, pl. BTC, SOL)
+    # Ha order_size_usdc meg van adva, ez ignorálva lesz!
     order_quantity: Decimal = Decimal("1.0")
+
+    # Order méret QUOTE currency-ben (USDC)
+    # Ha meg van adva (> 0), akkor az order_quantity automatikusan számítódik
+    # az aktuális ár alapján: quantity = order_size_usdc / current_price
+    order_size_usdc: Decimal | None = None
 
     # Grid szélesség (offset) százalékban
     # A teljes grid az ár ±(grid_offset/2)%-a körül helyezkedik el
