@@ -277,36 +277,51 @@ class GridStrategy(BaseStrategy):
         )
 
     def on_stop(self) -> None:
-        """Stratégia leállítása."""
-        self.log.info("GridStrategy stopping - canceling all orders...")
+        """
+        Stratégia leállítása.
 
-        # Összes order törlése
+        FONTOS: Minden nyitott order törlésre kerül (grid és TP/SL egyaránt).
+        A pozíció NEM kerül automatikusan zárásra - ezt a felhasználó dönti el.
+        """
+        self.log.info("GridStrategy stopping - canceling ALL orders...")
+
+        # Grid inaktiválása
+        self.grid_active = False
+
+        # ÖSSZES nyitott order törlése (grid orderek ÉS TP/SL orderek)
+        cancelled_count = 0
         working_orders = self.cache.orders_open(instrument_id=self.instrument_id)
         for order in working_orders:
             if order.is_open:
-                self.cancel_order(order)
+                try:
+                    self.cancel_order(order)
+                    cancelled_count += 1
+                    self.log.debug(f"Cancelled order: {order.client_order_id}")
+                except Exception as e:
+                    self.log.warning(f"Failed to cancel order {order.client_order_id}: {e}")
 
-        # Pozíció zárása
-        position = self._get_position()
-        if position and not position.is_closed:
-            qty = Quantity(
-                value=float(abs(position.quantity)),
-                precision=self.instrument.size_precision,
-            )
-            side = OrderSide.SELL if float(position.quantity) > 0 else OrderSide.BUY
-            close_order = self.order_factory.market(
-                instrument_id=self.instrument_id,
-                order_side=side,
-                quantity=qty,
-                time_in_force=TimeInForce.GTC,
-                reduce_only=True,
-            )
-            self.submit_order(close_order)
-            self.log.info(f"Closing position: {side} {qty}")
+        self.log.info(f"Cancelled {cancelled_count} orders")
 
         # Tracking reset
         self.grid_order_ids.clear()
         self.tp_sl_order_ids.clear()
+        self.grid_levels_by_order_id.clear()
+        self.active_tp_order_id = None
+        self.active_sl_order_id = None
+
+        # Pozíció info (NEM zárjuk automatikusan)
+        position = self._get_position()
+        if position and not position.is_closed:
+            qty = abs(float(position.quantity))
+            side = "LONG" if float(position.quantity) > 0 else "SHORT"
+            self.log.warning(
+                f"Open position remains: {side} {qty} - "
+                f"Manual intervention may be required!"
+            )
+
+        # Trade-ek lezárása
+        for trade in self.grid_trades.values():
+            trade.closed = True
         self.grid_trades.clear()
 
         # Teljesítmény log
@@ -317,7 +332,7 @@ class GridStrategy(BaseStrategy):
                 f"Total P&L={self.performance.total_pnl:.4f}"
             )
 
-        self.log.info("GridStrategy stopped")
+        self.log.info("GridStrategy stopped - all orders cancelled")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # DATA HANDLERS
@@ -623,38 +638,56 @@ class GridStrategy(BaseStrategy):
             return None, None
 
     def on_order_filled(self, event) -> None:
-        """Order fill esemény kezelése."""
+        """
+        Order fill esemény kezelése.
+
+        Grid működési logika:
+        1. Grid order fill → ELŐSZÖR töröljük a többi grid ordert
+        2. Majd TP/SL ordereket helyezünk el → átváltunk TP/SL módba
+        3. TP vagy SL fill → újraközpontosítjuk a gridet
+        """
         # Base class kezelés
         super().on_order_filled(event)
-
-        if not self.grid_active or self.paused_due_to_risk:
-            return
 
         order_id = str(event.client_order_id)
         order = self.cache.order(event.client_order_id)
         if not order:
             return
 
-        # Grid order teljesült
+        # ═══════════════════════════════════════════════════════════════════
+        # GRID ORDER FILL - Pozíció nyitás, átváltás TP/SL módba
+        # ═══════════════════════════════════════════════════════════════════
         if order_id in self.grid_order_ids:
             self.grid_order_ids.discard(order_id)
-            self.log.info(f"Grid order filled: {order.side.name} at {order.price}")
+            grid_level = self.grid_levels_by_order_id.get(order_id, 0)
 
-            # Pozíció lekérése
-            position = self._get_position()
+            self.log.info(
+                f"GRID ORDER FILLED: {order.side.name} at {order.price} "
+                f"(level {grid_level}) → Switching to TP/SL mode"
+            )
+
+            # FONTOS: ELŐSZÖR töröljük a többi grid ordert
+            self._cancel_all_grid_orders()
 
             # Ha már van aktív TP/SL, nem helyezünk el újat
             if self.active_tp_order_id or self.active_sl_order_id:
-                self.log.info("TP/SL already active, not placing new ones")
+                self.log.warning(
+                    "TP/SL already active - this should not happen in single position mode"
+                )
                 return
+
+            # Pozíció quantity meghatározása
+            position = self._get_position()
+            if position and not position.is_closed:
+                qty = Quantity(
+                    value=float(abs(position.quantity)),
+                    precision=self.instrument.size_precision,
+                )
+            else:
+                qty = self._make_quantity()
 
             # TP/SL elhelyezése
             entry_price = Decimal(str(order.price.as_double()))
-            qty = self._make_quantity()
-
-            if position and not position.is_closed:
-                qty = abs(position.quantity)
-
             tp_order, sl_order = self._place_tp_sl_orders(entry_price, order.side, qty)
 
             if tp_order and sl_order:
@@ -667,62 +700,128 @@ class GridStrategy(BaseStrategy):
                     quantity=Decimal(str(qty)),
                     tp_order_id=str(tp_order.client_order_id),
                     sl_order_id=str(sl_order.client_order_id),
-                    grid_level=self.grid_levels_by_order_id.get(order_id, 0),
+                    grid_level=grid_level,
                     entry_time=time.time(),
                     profit_pct=float(self.take_profit_pct * 100),
                 )
                 self.grid_trades[trade.trade_id] = trade
 
-                # Többi grid order törlése (single position mode)
-                self._cancel_all_grid_orders()
+                self.log.info(
+                    f"TP/SL mode active: TP at {tp_order.price}, "
+                    f"SL at {sl_order.trigger_price}"
+                )
+            return
 
-        # TP fill
-        elif order_id == self.active_tp_order_id:
-            self.log.info(f"Take Profit filled at {order.price}")
+        # ═══════════════════════════════════════════════════════════════════
+        # TP FILL - Take Profit elérve, grid újraindítás
+        # ═══════════════════════════════════════════════════════════════════
+        if order_id == self.active_tp_order_id:
+            self.log.info(f"TAKE PROFIT FILLED at {order.price} → Re-centering grid")
             self._handle_position_close("TP")
+            return
 
-        # SL fill
-        elif order_id == self.active_sl_order_id:
-            self.log.warning(f"Stop Loss triggered at {order.price}")
+        # ═══════════════════════════════════════════════════════════════════
+        # SL FILL - Stop Loss kiütötte, grid újraindítás
+        # ═══════════════════════════════════════════════════════════════════
+        if order_id == self.active_sl_order_id:
+            # Stop market ordernek trigger_price van, nem price
+            trigger_price = getattr(order, 'trigger_price', None) or getattr(order, 'price', None)
+            self.log.warning(f"STOP LOSS TRIGGERED at {trigger_price} → Re-centering grid")
             self._handle_position_close("SL")
+            return
+
+        # ═══════════════════════════════════════════════════════════════════
+        # EGYÉB TP/SL ORDER - valószínűleg kézi beavatkozás
+        # ═══════════════════════════════════════════════════════════════════
+        if order_id in self.tp_sl_order_ids:
+            self.log.info(f"TP/SL order filled: {order_id}")
+            self.tp_sl_order_ids.discard(order_id)
 
     def _cancel_all_grid_orders(self) -> None:
-        """Összes grid order törlése."""
+        """
+        Összes grid order törlése.
+
+        Ez a metódus akkor hívódik, amikor egy grid order teljesül és
+        pozíció nyílik. Ilyenkor az összes többi grid ordert törölni kell
+        és átváltunk TP/SL módba.
+        """
+        cancelled_count = 0
         working_orders = self.cache.orders_open(instrument_id=self.instrument_id)
 
         for order in working_orders:
-            if order.is_open and str(order.client_order_id) in self.grid_order_ids:
-                self.cancel_order_tracked(order)
+            order_id = str(order.client_order_id)
+            # Csak grid ordereket töröljük, TP/SL-eket nem
+            if order.is_open and order_id in self.grid_order_ids:
+                try:
+                    self.cancel_order(order)
+                    cancelled_count += 1
+                except Exception as e:
+                    self.log.warning(f"Failed to cancel grid order {order_id}: {e}")
 
         self.grid_order_ids.clear()
         self.grid_levels_by_order_id.clear()
-        self.log.info("Cancelled all grid orders (single position mode)")
+
+        if cancelled_count > 0:
+            self.log.info(
+                f"Cancelled {cancelled_count} grid orders → switched to TP/SL mode"
+            )
 
     def _handle_position_close(self, reason: str) -> None:
-        """Pozíció zárás kezelése és grid újraindítása."""
+        """
+        Pozíció zárás kezelése és grid újraindítása.
+
+        Ez a metódus hívódik, amikor TP vagy SL teljesül.
+        Törli az ellentétes ordert és újraközpontosítja a gridet.
+        """
+        from nautilus_trader.model.identifiers import ClientOrderId
+
+        self.log.info(f"Position closed ({reason}), cleaning up and re-centering grid...")
+
         # Ellentétes order törlése
         if reason == "TP" and self.active_sl_order_id:
-            sl_order = self.cache.order(self.active_sl_order_id)
+            sl_order = self.cache.order(ClientOrderId(self.active_sl_order_id))
             if sl_order and sl_order.is_open:
-                self.cancel_order_tracked(sl_order)
-        elif reason == "SL" and self.active_tp_order_id:
-            tp_order = self.cache.order(self.active_tp_order_id)
-            if tp_order and tp_order.is_open:
-                self.cancel_order_tracked(tp_order)
+                try:
+                    self.cancel_order(order=sl_order)
+                    self.log.debug(f"Cancelled SL order: {self.active_sl_order_id}")
+                except Exception as e:
+                    self.log.warning(f"Failed to cancel SL order: {e}")
 
-        # Tracking reset
+        elif reason == "SL" and self.active_tp_order_id:
+            tp_order = self.cache.order(ClientOrderId(self.active_tp_order_id))
+            if tp_order and tp_order.is_open:
+                try:
+                    self.cancel_order(order=tp_order)
+                    self.log.debug(f"Cancelled TP order: {self.active_tp_order_id}")
+                except Exception as e:
+                    self.log.warning(f"Failed to cancel TP order: {e}")
+
+        # TP/SL tracking reset
+        if self.active_tp_order_id:
+            self.tp_sl_order_ids.discard(self.active_tp_order_id)
+        if self.active_sl_order_id:
+            self.tp_sl_order_ids.discard(self.active_sl_order_id)
+
         self.active_tp_order_id = None
         self.active_sl_order_id = None
 
-        # Trade-ek lezárása
+        # Trade-ek lezárása és teljesítmény rögzítése
         for trade in self.grid_trades.values():
-            trade.closed = True
+            if not trade.closed:
+                trade.closed = True
+                # Profit rögzítése (egyszerűsített)
+                if reason == "TP":
+                    profit = trade.entry_price * self.take_profit_pct * trade.quantity
+                    self.performance.add_trade(profit)
+                else:  # SL
+                    loss = trade.entry_price * self.stop_loss_pct * trade.quantity * Decimal("-1")
+                    self.performance.add_trade(loss)
 
-        self.log.info(f"Position closed ({reason}), re-centering grid...")
-
-        # Kis várakozás, majd újraközpontosítás
-        if self.current_mid_price:
+        # Grid újraközpontosítás
+        if self.current_mid_price and not self.paused_due_to_risk:
             self._center_grid(self.current_mid_price)
+        else:
+            self.log.warning("Cannot re-center grid: no price or paused due to risk")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # RISK MANAGEMENT
@@ -1030,6 +1129,40 @@ class GridStrategy(BaseStrategy):
             f"Levels: {self.effective_grid_levels} | "
             f"Trend: {'UP' if self.is_uptrend else 'DOWN'} ({self.trend_strength:.1f}%)"
         )
+
+    def _handle_external_cancel(self, event) -> None:
+        """
+        Kézi order törlés kezelése.
+
+        Ha valaki a Binance felületen törli a TP vagy SL ordert,
+        akkor újra el kell helyezni, vagy le kell állítani a gridet.
+        """
+        order_id = str(event.client_order_id)
+
+        # TP order kézzel törölve
+        if order_id == self.active_tp_order_id:
+            self.log.warning(
+                f"EXTERNAL CANCEL: TP order {order_id} was cancelled externally! "
+                f"Position may need manual management."
+            )
+            self.active_tp_order_id = None
+            self.tp_sl_order_ids.discard(order_id)
+
+        # SL order kézzel törölve
+        elif order_id == self.active_sl_order_id:
+            self.log.warning(
+                f"EXTERNAL CANCEL: SL order {order_id} was cancelled externally! "
+                f"Position has NO STOP LOSS protection!"
+            )
+            self.active_sl_order_id = None
+            self.tp_sl_order_ids.discard(order_id)
+
+        # Grid order kézzel törölve
+        elif order_id in self.grid_order_ids:
+            self.log.info(f"External cancel of grid order: {order_id}")
+            self.grid_order_ids.discard(order_id)
+            if order_id in self.grid_levels_by_order_id:
+                del self.grid_levels_by_order_id[order_id]
 
     # ═══════════════════════════════════════════════════════════════════════════
     # STATE PERSISTENCE (MongoDB)

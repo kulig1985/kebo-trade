@@ -13,7 +13,8 @@
       "Bash(grep:*)",
       "Bash(python3:*)",
       "Bash(tee:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebFetch(domain:medium.com)"
     ]
   }
 }
