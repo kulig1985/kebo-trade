@@ -240,11 +240,15 @@ async def main():
     # ═══════════════════════════════════════════════════════════════════════
 
     shutdown_event = asyncio.Event()
+    shutdown_reason = "NORMAL"
 
     def handle_shutdown(sig, frame):
-        print(f"\n⚠️ Received {sig}, shutting down...")
+        nonlocal shutdown_reason
+        print(f"\n⚠️ Received signal {sig}, initiating graceful shutdown...")
+        shutdown_reason = f"SIGNAL_{sig}"
         shutdown_event.set()
 
+    # Register signal handlers
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
@@ -261,22 +265,46 @@ async def main():
     try:
         await shutdown_event.wait()
     except asyncio.CancelledError:
-        pass
+        shutdown_reason = "CANCELLED"
 
     # ═══════════════════════════════════════════════════════════════════════
-    # SHUTDOWN
+    # SHUTDOWN - CRITICAL: Cancel all orders before stopping
     # ═══════════════════════════════════════════════════════════════════════
 
     print("\n" + "-" * 60)
-    print("SHUTDOWN")
+    print("SHUTDOWN - Cancelling all orders...")
+
+    # FONTOS: Explicit order törlés MIELŐTT bármit leállítanánk
+    # Ez biztosítja, hogy az orderek törlődnek még ha a stratégia on_stop() nem is fut le
+    try:
+        # Cancel all open orders for the instrument
+        working_orders = node.cache.orders_open(instrument_id=instrument_id)
+        cancelled_count = 0
+        for order in working_orders:
+            if order.is_open:
+                try:
+                    strategy.cancel_order(order)
+                    cancelled_count += 1
+                    print(f"  Cancelled: {order.client_order_id}")
+                except Exception as e:
+                    print(f"  Failed to cancel {order.client_order_id}: {e}")
+
+        print(f"Cancelled {cancelled_count} orders")
+
+        # Kis várakozás, hogy a cancel kérések elmenjenek
+        await asyncio.sleep(1)
+
+    except Exception as e:
+        print(f"Error during order cancellation: {e}")
 
     # Get final state
     state_snapshot = strategy.on_save() if hasattr(strategy, "on_save") else {}
 
     # Stop publisher
-    await publisher.stop(reason="NORMAL", state_snapshot=state_snapshot)
+    await publisher.stop(reason=shutdown_reason, state_snapshot=state_snapshot)
 
-    # Stop node
+    # Stop node (this should also trigger strategy.on_stop())
+    print("Stopping trading node...")
     node.stop()
     await asyncio.sleep(2)
     node.dispose()

@@ -1,6 +1,9 @@
 # Kebo Trade - Live Trading
 # Build: docker build --platform linux/amd64 -t kebo-trade .
 # Run:   docker run --env-file .env kebo-trade
+#
+# FONTOS: Graceful shutdown - használj `docker stop` parancsot (nem `docker kill`)
+# A `docker stop` SIGTERM-et küld, ami lehetővé teszi az orderek törlését.
 
 FROM --platform=linux/amd64 python:3.12-slim AS builder
 
@@ -25,8 +28,9 @@ RUN groupadd -g 1001 trader && useradd -u 1001 -g trader -m trader
 
 WORKDIR /app
 
+# tini for proper signal handling in Docker
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 ca-certificates \
+    libssl3 ca-certificates tini \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
@@ -35,6 +39,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --chown=trader:trader persistence/ ./persistence/
 COPY --chown=trader:trader strategies/ ./strategies/
 COPY --chown=trader:trader run/ ./run/
+COPY --chown=trader:trader entrypoint.sh ./entrypoint.sh
 
 USER trader
 
@@ -52,14 +57,9 @@ ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
 ENV TRADING_MODE=spot
 ENV STRATEGY_TYPE=bounce_scalper
 
-CMD ["sh", "-c", "\
-    if [ \"$TRADING_MODE\" = 'futures' ]; then \
-        if [ \"$STRATEGY_TYPE\" = 'grid' ] || [ \"$STRATEGY_TYPE\" = 'grid_strategy' ]; then \
-            python run/run_live_grid.py; \
-        else \
-            python run/run_live_futures.py; \
-        fi; \
-    else \
-        python run/run_live.py; \
-    fi \
-"]
+# STOP_GRACE_PERIOD: 30 másodperc az orderek törlésére
+STOPSIGNAL SIGTERM
+
+# tini as init system - proper signal forwarding
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/app/entrypoint.sh"]

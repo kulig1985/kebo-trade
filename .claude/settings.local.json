@@ -14,7 +14,8 @@
       "Bash(python3:*)",
       "Bash(tee:*)",
       "Bash(ls:*)",
-      "WebFetch(domain:medium.com)"
+      "WebFetch(domain:medium.com)",
+      "Bash(chmod +x:*)"
     ]
   }
 }

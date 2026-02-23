@@ -4,23 +4,30 @@
 #
 # ELŐKÉSZÜLET:
 #   1. Hozz létre egy docker.env fájlt (NEM .env, mert az "export"-os!)
-#   2. Töltsd ki a változókat
+#   2. Töltsd ki a változókat (lásd: env-examples/docker-grid.env.example)
 #
 # docker.env tartalma (NINCS "export"!):
 #   MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
 #   MONGODB_ENABLED=true
-#   STRATEGY_ID=bounce_scalper_001
+#   STRATEGY_ID=grid_sol_50usdc
+#   TRADING_MODE=futures
+#   STRATEGY_TYPE=grid
+#   SYMBOL=SOLUSDC
 #   BINANCE_API_KEY=your_key
 #   BINANCE_API_SECRET=your_secret
-#   BINANCE_TESTNET=true
-#   WEBHOOK_URL=
+#   BINANCE_ENV=TESTNET
 #   LOG_LEVEL=INFO
 #
 # HASZNÁLAT:
 #   docker-compose up -d           # Indítás
 #   docker-compose logs -f         # Logok
-#   docker-compose down            # Leállítás
+#   docker-compose down            # Leállítás (GRACEFUL - törli az ordereket!)
 #   docker-compose up -d --build   # Újraépítés és indítás
+#
+# LEÁLLÍTÁS FONTOS:
+#   docker-compose down            # AJÁNLOTT - graceful shutdown
+#   docker stop kebo-trade         # OK - graceful shutdown (30s timeout)
+#   NE HASZNÁLD: docker kill       # Azonnal leáll, ORDEREK BENT MARADNAK!
 #
 # ============================================================================
 
@@ -36,6 +43,8 @@ services:
     env_file:
       - docker.env
 
+    # FONTOS: Graceful shutdown - init process for proper signal handling
+    init: true
     restart: unless-stopped
     stop_grace_period: 30s
 
