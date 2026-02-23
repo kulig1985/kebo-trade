@@ -133,6 +133,7 @@ async def main():
                 api_secret=api_secret,
                 account_type=BinanceAccountType.SPOT,
                 environment=binance_env,
+
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
         },
@@ -142,6 +143,8 @@ async def main():
                 api_secret=api_secret,
                 account_type=BinanceAccountType.SPOT,
                 environment=binance_env,
+                base_url_ws="wss://ws-api.testnet.binance.vision/ws-api/v3",  # WS API
+                base_url_ws_stream="wss://stream.testnet.binance.vision/ws",  # user data
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
         },

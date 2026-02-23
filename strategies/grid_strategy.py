@@ -286,7 +286,7 @@ class GridStrategy(BaseStrategy):
                 self.cancel_order(order)
 
         # Pozíció zárása
-        position = self.cache.position_for_instrument(self.instrument_id)
+        position = self._get_position()
         if position and not position.is_closed:
             qty = abs(position.quantity)
             side = OrderSide.SELL if float(position.quantity) > 0 else OrderSide.BUY
@@ -637,7 +637,7 @@ class GridStrategy(BaseStrategy):
             self.log.info(f"Grid order filled: {order.side.name} at {order.price}")
 
             # Pozíció lekérése
-            position = self.cache.position_for_instrument(self.instrument_id)
+            position = self._get_position()
 
             # Ha már van aktív TP/SL, nem helyezünk el újat
             if self.active_tp_order_id or self.active_sl_order_id:
@@ -802,7 +802,7 @@ class GridStrategy(BaseStrategy):
 
         long_n = short_n = Decimal("0")
 
-        position = self.cache.position_for_instrument(self.instrument_id)
+        position = self._get_position()
         if position and not position.is_closed:
             qty = abs(float(position.quantity))
             notional = Decimal(str(qty * float(self.current_mid_price)))
@@ -934,6 +934,14 @@ class GridStrategy(BaseStrategy):
     # HELPERS
     # ═══════════════════════════════════════════════════════════════════════════
 
+    def _get_position(self):
+        """Aktuális pozíció lekérése az instrumentumhoz."""
+        positions = self.cache.positions(instrument_id=self.instrument_id)
+        for pos in positions:
+            if not pos.is_closed:
+                return pos
+        return None
+
     def _make_price(self, raw_price: float) -> Price:
         """Price objektum létrehozása megfelelő precizitással."""
         return Price(
@@ -991,7 +999,7 @@ class GridStrategy(BaseStrategy):
 
     def _log_status(self, price: Decimal) -> None:
         """Periodikus státusz log."""
-        position = self.cache.position_for_instrument(self.instrument_id)
+        position = self._get_position()
         pos_info = "No position"
         if position and not position.is_closed:
             side = "LONG" if float(position.quantity) > 0 else "SHORT"
@@ -1087,7 +1095,7 @@ class GridStrategy(BaseStrategy):
             self.log.error(f"Balance snapshot error: {e}")
             return {}
 
-        position = self.cache.position_for_instrument(self.instrument_id)
+        position = self._get_position()
         open_positions = 0
         if position and not position.is_closed:
             open_positions = 1
@@ -1100,7 +1108,7 @@ class GridStrategy(BaseStrategy):
 
     def _get_heartbeat_data(self) -> dict:
         """Heartbeat data a MongoDB-hez."""
-        position = self.cache.position_for_instrument(self.instrument_id)
+        position = self._get_position()
         pos_info = None
         if position and not position.is_closed:
             pos_info = {
