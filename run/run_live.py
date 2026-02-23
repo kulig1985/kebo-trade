@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType, BinanceEnvironment
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig, BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory, BinanceLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig, LiveExecEngineConfig, LoggingConfig, TradingNodeConfig
@@ -78,7 +78,17 @@ async def main():
     # Binance API
     api_key = os.environ.get("BINANCE_API_KEY")
     api_secret = os.environ.get("BINANCE_API_SECRET")
-    is_testnet = os.environ.get("BINANCE_TESTNET", "true").lower() == "true"
+
+    # Environment: TESTNET, DEMO, LIVE
+    env_str = os.environ.get("BINANCE_ENV", os.environ.get("BINANCE_TESTNET", "testnet"))
+    if env_str.lower() in ("true", "testnet"):
+        binance_env = BinanceEnvironment.TESTNET
+    elif env_str.lower() in ("demo",):
+        binance_env = BinanceEnvironment.DEMO
+    elif env_str.lower() in ("false", "live"):
+        binance_env = BinanceEnvironment.LIVE
+    else:
+        binance_env = BinanceEnvironment.TESTNET
 
     if not api_key or not api_secret:
         print("❌ BINANCE_API_KEY and BINANCE_API_SECRET required!")
@@ -87,7 +97,7 @@ async def main():
     # Info
     print(f"\nStrategy: {strategy_id}")
     print(f"Symbols: {', '.join(symbols)}")
-    print(f"Mode: {'TESTNET' if is_testnet else '🔴 LIVE'}")
+    print(f"Environment: {binance_env.name}")
     print(f"Trade size: {params.get('trade_size_usdc', 5)} USDC")
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -122,7 +132,7 @@ async def main():
                 api_key=api_key,
                 api_secret=api_secret,
                 account_type=BinanceAccountType.SPOT,
-                testnet=is_testnet,
+                environment=binance_env,
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
         },
@@ -131,7 +141,7 @@ async def main():
                 api_key=api_key,
                 api_secret=api_secret,
                 account_type=BinanceAccountType.SPOT,
-                testnet=is_testnet,
+                environment=binance_env,
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
         },

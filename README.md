@@ -40,11 +40,14 @@ pip install -r requirements.txt
 | `STRATEGY_ID` | **IGEN** | - | Egyedi stratégia azonosító |
 | `BINANCE_API_KEY` | **IGEN** (live) | - | Binance API key |
 | `BINANCE_API_SECRET` | **IGEN** (live) | - | Binance API secret |
-| `BINANCE_TESTNET` | nem | `true` | Testnet mód |
-| `TRADING_MODE` | nem | `spot` | `spot` vagy `futures` |
+| `BINANCE_ENV` | nem | `TESTNET` | `TESTNET`, `DEMO`, vagy `LIVE` |
+| `TRADING_MODE` | nem | `spot` | `spot`, `futures`, vagy `grid` |
+| `SYMBOL` | nem (grid) | `BTCUSDC` | Grid Strategy symbol |
 | `WEBHOOK_URL` | nem | - | Backend notification URL |
 | `WEBHOOK_SECRET` | nem | - | Webhook hitelesítő kulcs |
 | `LOG_LEVEL` | nem | `INFO` | Log szint |
+
+> **Megjegyzés**: `BINANCE_TESTNET` továbbra is működik visszafelé kompatibilitás miatt, de ajánlott a `BINANCE_ENV` használata.
 
 ### 2.2 .env fájl létrehozása
 
@@ -603,10 +606,13 @@ MONGODB_URI=...
 | Fájl | Leírás |
 |------|--------|
 | `.env.example` | Alap .env minta |
-| `env-examples/bounce-001.env.example` | Stratégia 1 |
-| `env-examples/bounce-002.env.example` | Stratégia 2 |
+| `env-examples/bounce-001.env.example` | Bounce Scalper stratégia 1 |
+| `env-examples/bounce-002.env.example` | Bounce Scalper stratégia 2 |
+| `env-examples/grid.env.example` | Grid Strategy (Python) |
+| `env-examples/docker-grid.env.example` | Grid Strategy (Docker) |
 | `env-examples/backtest.env.example` | Backtest |
-| `example_config.json` | Stratégia config JSON |
+| `example_config.json` | Bounce Scalper config JSON |
+| `example_grid_config.json` | Grid Strategy config JSON |
 | `docker-compose.yml` | Egy stratégia |
 | `docker-compose.multi.yml` | Több stratégia |
 
@@ -615,4 +621,5 @@ MONGODB_URI=...
 ## További dokumentáció
 
 - [docs/BOUNCE_SCALPER.md](docs/BOUNCE_SCALPER.md) - Bounce Scalper stratégia
+- [docs/GRID_STRATEGY.md](docs/GRID_STRATEGY.md) - Grid Trading stratégia
 - [docs/MONGODB_API.md](docs/MONGODB_API.md) - MongoDB API (NestJS fejlesztőknek)

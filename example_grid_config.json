@@ -1,0 +1,32 @@
+{
+  "strategy_id": "grid_strategy_futures_001",
+  "strategy_type": "grid_strategy",
+  "symbol": "BTCUSDC",
+  "parameters": {
+    "grid_levels": 15,
+    "order_quantity": 0.001,
+    "grid_offset_pct": 8.0,
+    "take_profit_pct": 1.2,
+    "stop_loss_pct": 2.0,
+    "recenter_drift_threshold_pct": 3.0,
+    "recenter_interval_seconds": 300,
+    "breakout_threshold_pct": 6.0,
+    "trailing_stop_threshold_pct": 8.0,
+    "max_drawdown_pct": 15.0,
+    "max_long_notional": 800.0,
+    "max_short_notional": 800.0,
+    "max_total_notional": 1200.0,
+    "volatility_adapt_offset": true,
+    "enable_breakout_stop": true,
+    "enable_exposure_limits": true,
+    "enable_trailing_stop": true,
+    "enable_max_drawdown": true,
+    "enable_auto_resume": true,
+    "enable_dynamic_grid_levels": true,
+    "min_grid_levels": 5,
+    "max_grid_levels": 30,
+    "atr_period": 14,
+    "sma_fast_period": 9,
+    "sma_slow_period": 21
+  }
+}

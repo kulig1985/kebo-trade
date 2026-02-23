@@ -40,7 +40,18 @@ USER trader
 
 ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
 
-# Default: SPOT. Use TRADING_MODE=futures for Futures USDC Margin
+# Trading mode: spot, futures, grid
+# - spot: Bounce Scalper - Binance SPOT
+# - futures: Bounce Scalper - Binance Futures USDC Margin
+# - grid: Grid Strategy - Binance Futures USDC Margin
 ENV TRADING_MODE=spot
 
-CMD ["sh", "-c", "if [ \"$TRADING_MODE\" = 'futures' ]; then python run/run_live_futures.py; else python run/run_live.py; fi"]
+CMD ["sh", "-c", "\
+    if [ \"$TRADING_MODE\" = 'grid' ]; then \
+        python run/run_live_grid.py; \
+    elif [ \"$TRADING_MODE\" = 'futures' ]; then \
+        python run/run_live_futures.py; \
+    else \
+        python run/run_live.py; \
+    fi \
+"]
