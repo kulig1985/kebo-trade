@@ -7,440 +7,577 @@ Geometrikus grid trading stratégia Binance Futures-re, NautilusTrader alapon Mo
 ## Tartalomjegyzék
 
 1. [Áttekintés](#1-áttekintés)
-2. [Működési elv](#2-működési-elv)
-3. [Konfiguráció](#3-konfiguráció)
-4. [Backtest futtatása](#4-backtest-futtatása)
-5. [Live trading](#5-live-trading)
-6. [Kockázatkezelés](#6-kockázatkezelés)
-7. [Technikai indikátorok](#7-technikai-indikátorok)
-8. [MongoDB integráció](#8-mongodb-integráció)
-9. [Példa config](#9-példa-config)
+2. [Működési Ciklus](#2-működési-ciklus)
+3. [Konfiguráció - Részletes Magyarázat](#3-konfiguráció---részletes-magyarázat)
+4. [Kockázatkezelés](#4-kockázatkezelés)
+5. [Futtatás](#5-futtatás)
+6. [Példa Konfiguráció](#6-példa-konfiguráció)
+7. [Mit Fogsz Látni](#7-mit-fogsz-látni)
 
 ---
 
 ## 1. Áttekintés
 
-A Grid Strategy egy geometrikus eloszlású ordereket használó kereskedési stratégia, amely az aktuális ár körül helyez el buy és sell ordereket. Különösen hatékony oldalazó (ranging) piacokon.
+A Grid Strategy egy geometrikus eloszlású ordereket használó kereskedési stratégia, amely az aktuális ár körül helyez el buy és sell ordereket.
 
 ### Fő jellemzők
 
+- **Single Position Mode** - Egyszerre csak egy pozíció lehet nyitva
 - **Geometrikus grid szintek** - Az orderek geometrikus eloszlásban helyezkednek el
-- **Automatikus TP/SL** - Minden teljesült orderhez TP és SL kerül elhelyezésre
-- **Volatilitás adaptáció** - ATR alapú grid szélesség igazítás
-- **Trend érzékelés** - SMA cross alapú trend detektálás
-- **Dinamikus grid szintek** - Volatilitás és trend alapú szint számítás
+- **Automatikus TP/SL** - Minden pozícióhoz TP és SL kerül elhelyezésre
+- **USDC alapú méretezés** - Order méret USDC-ben megadva
 - **Kockázatkezelési védelmek** - Breakout stop, trailing stop, max drawdown
-- **Single position mode** - Egyszerre csak egy pozíció
 
 ---
 
-## 2. Működési elv
+## 2. Működési Ciklus
 
-### 2.1 Grid felépítése
-
-```
-                    SELL orders
-           ┌─────────────────────────┐
-           │  S5  S4  S3  S2  S1     │  ← Ár felett
-           └─────────────────────────┘
-                        ↑
-                   Current Price
-                        ↓
-           ┌─────────────────────────┐
-           │  B1  B2  B3  B4  B5     │  ← Ár alatt
-           └─────────────────────────┘
-                    BUY orders
-```
-
-### 2.2 Geometrikus eloszlás
-
-Az orderek nem egyenletes távolságra vannak, hanem geometrikus arányban:
+### 2.1 GRID MÓD (Nincs nyitott pozíció)
 
 ```
-ratio = (upper_price / lower_price) ^ (1 / (grid_levels * 2))
-
-BUY_i  = current_price * ratio^(-i)
-SELL_i = current_price * ratio^(+i)
+                    SELL orderek (ár FELETT)
+                    ────────────────────────
+                         SELL @ 175.2
+                         SELL @ 173.8
+                         SELL @ 172.4
+                         SELL @ 171.0
+    Aktuális ár ───────► 170.0 ◄─────────
+                         BUY @ 169.0
+                         BUY @ 167.6
+                         BUY @ 166.2
+                         BUY @ 164.8
+                    ────────────────────────
+                    BUY orderek (ár ALATT)
 ```
 
-### 2.3 Trade flow
+### 2.2 POZÍCIÓ NYITÁS (Grid order FILL)
 
-1. **Inicializálás**: Grid középre állítása az aktuális ár körül
-2. **Order elhelyezés**: Buy orderek ár alatt, sell orderek ár felett
-3. **Fill kezelés**: Ha egy grid order teljesül, TP/SL pár kerül elhelyezésre
-4. **Pozíció zárás**: TP vagy SL teljesül
-5. **Grid újraindítás**: Pozíció zárása után a grid újraközpontosodik
+Amikor egy grid order teljesül:
 
-### 2.4 Single Position Mode
+```
+ELŐTTE:                          UTÁNA:
+10 grid order a piacon    →      0 grid order (MIND TÖRÖLVE)
+0 pozíció                 →      1 pozíció (LONG vagy SHORT)
+0 TP/SL                   →      2 order (1 TP + 1 SL)
+```
 
-A stratégia egyszerre csak egy pozíciót tart:
-- Egy grid order teljesülésekor az összes többi grid order törlődik
-- TP/SL elhelyezése a pozícióhoz
-- Pozíció zárása után a grid újra felépül
+**LONG pozíció (BUY teljesült):**
+```
+Entry:  169.0 (BUY teljesült)
+TP:     entry × (1 + tp_pct) = 169.51 (SELL LIMIT)   ← Eladunk drágábban = PROFIT
+SL:     entry × (1 - sl_pct) = 166.47 (SELL STOP)    ← Eladunk olcsóbban = LOSS
+```
+
+**SHORT pozíció (SELL teljesült):**
+```
+Entry:  171.0 (SELL teljesült)
+TP:     entry × (1 - tp_pct) = 170.49 (BUY LIMIT)    ← Visszavásárlás olcsóbban = PROFIT
+SL:     entry × (1 + sl_pct) = 173.57 (BUY STOP)     ← Visszavásárlás drágábban = LOSS
+```
+
+### 2.3 POZÍCIÓ ZÁRÁS
+
+**Take Profit teljesül:**
+- Profit realizálódik
+- SL order törlődik
+- Grid újraközpontosítás az aktuális áron
+
+**Stop Loss teljesül:**
+- Loss realizálódik
+- TP order törlődik
+- Grid újraközpontosítás az aktuális áron
+
+### 2.4 Állapot Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│   ┌──────────┐                              ┌──────────┐        │
+│   │          │  Grid order FILL             │          │        │
+│   │   GRID   │ ──────────────────────────►  │  TP/SL   │        │
+│   │   MÓD    │                              │   MÓD    │        │
+│   │          │  TP vagy SL FILL             │          │        │
+│   │ 10 order │ ◄──────────────────────────  │ 2 order  │        │
+│   │ 0 pozíció│                              │ 1 pozíció│        │
+│   └──────────┘                              └──────────┘        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 3. Konfiguráció
+## 3. Konfiguráció - Részletes Magyarázat
 
-### 3.1 Grid paraméterek
+### 3.1 Grid Paraméterek
 
-| Paraméter | Alapérték | Leírás |
-|-----------|-----------|--------|
-| `grid_levels` | 15 | Grid szintek száma (mindkét irányba) |
-| `order_quantity` | 1.0 | Order mennyiség |
-| `grid_offset_pct` | 8.0% | Grid szélesség (±4% az ártól) |
-| `take_profit_pct` | 1.2% | Take profit százalék |
-| `stop_loss_pct` | 2.0% | Stop loss százalék |
+#### `grid_levels` (Alapérték: 15)
+
+**Mit jelent:** Hány darab order kerül elhelyezésre az ár ALATT (BUY) és az ár FELETT (SELL).
+
+**Példa:**
+```
+grid_levels = 5
+
+→ 5 BUY order az ár alatt
+→ 5 SELL order az ár felett
+→ Összesen: 10 order a piacon
+```
+
+**Hatás:**
+- **Több level** = Sűrűbb háló, több esély a fill-re, de több tőke kell
+- **Kevesebb level** = Ritkább háló, kevesebb fill, de kisebb tőkeigény
+
+---
+
+#### `order_size_usdc` (Alapérték: 50)
+
+**Mit jelent:** Minden egyes order értéke USDC-ben.
+
+**Példa:**
+```
+order_size_usdc = 10
+SOL ára = 170 USDC
+
+→ Egy order mennyisége: 10 / 170 = 0.059 SOL
+→ Ha 10 order van: 10 × 10 = 100 USDC potenciális kitettség
+```
+
+**Hatás:**
+- **Nagyobb érték** = Nagyobb pozíciók, több profit/loss
+- **Kisebb érték** = Kisebb pozíciók, kisebb kockázat
+- **Minimum:** Binance Futures min notional = 5 USDC
+
+---
+
+#### `grid_offset_pct` (Alapérték: 8.0)
+
+**Mit jelent:** A grid TELJES szélessége százalékban. A grid az ár körül ±(offset/2) távolságra terjed.
+
+**Példa:**
+```
+grid_offset_pct = 2.0
+Aktuális ár = 170.00
+
+→ Half offset = 2.0 / 2 = 1.0%
+→ Grid alsó széle: 170.00 × 0.99 = 168.30
+→ Grid felső széle: 170.00 × 1.01 = 171.70
+→ Grid tartomány: 168.30 - 171.70
+```
+
+**Hatás:**
+- **Szélesebb grid** = Távolabbi orderek, ritkább fill-ek, de nagyobb ármozgást lefed
+- **Szűkebb grid** = Közelebbi orderek, gyakoribb fill-ek, de kis ármozgásnál is kilép
+
+```
+grid_offset_pct = 2%   →  ±1% az ártól  →  Szűk grid
+grid_offset_pct = 8%   →  ±4% az ártól  →  Széles grid
+grid_offset_pct = 16%  →  ±8% az ártól  →  Nagyon széles grid
+```
+
+---
+
+#### `take_profit_pct` (Alapérték: 1.2)
+
+**Mit jelent:** Hány százalék profitot célzunk meg egy pozíción.
+
+**Példa LONG esetén:**
+```
+take_profit_pct = 0.3
+Entry ár = 169.00
+
+→ TP ár = 169.00 × (1 + 0.003) = 169.51
+→ Ha elérjük: 0.3% profit
+→ 10 USDC pozíción: 0.03 USDC profit
+```
+
+**Példa SHORT esetén:**
+```
+take_profit_pct = 0.3
+Entry ár = 171.00
+
+→ TP ár = 171.00 × (1 - 0.003) = 170.49
+→ Ha elérjük: 0.3% profit
+```
+
+**Hatás:**
+- **Nagyobb TP%** = Ritkábban teljesül, de nagyobb profit trade-enként
+- **Kisebb TP%** = Gyakrabban teljesül, de kisebb profit trade-enként
+
+---
+
+#### `stop_loss_pct` (Alapérték: 2.0)
+
+**Mit jelent:** Mekkora veszteségnél záródik automatikusan a pozíció.
+
+**Példa LONG esetén:**
+```
+stop_loss_pct = 1.5
+Entry ár = 169.00
+
+→ SL ár = 169.00 × (1 - 0.015) = 166.47
+→ Ha elérjük: -1.5% loss
+→ 10 USDC pozíción: -0.15 USDC veszteség
+```
+
+**Risk/Reward arány:**
+```
+TP = 0.3%, SL = 1.5%
+R/R = 0.3 / 1.5 = 0.2
+
+→ Ahhoz, hogy profitábilis legyél: win rate > 83% kell!
+```
+
+---
 
 ### 3.2 Újraközpontosítás
 
-| Paraméter | Alapérték | Leírás |
-|-----------|-----------|--------|
-| `recenter_drift_threshold_pct` | 3.0% | Ár eltolódás küszöb |
-| `recenter_interval_seconds` | 300 | Minimum idő újraközpontosítások között |
+#### `recenter_drift_threshold_pct` (Alapérték: 3.0)
+
+**Mit jelent:** Ha az ár ennyivel eltávolodik a grid közepétől, újraközpontosítás történik.
+
+**Példa:**
+```
+recenter_drift_threshold_pct = 1.5
+Grid közép = 170.00
+
+→ Drift küszöb = 170.00 × 0.015 = 2.55 USDC
+→ Ha ár > 172.55 VAGY ár < 167.45 → Recenter
+```
+
+**Mi történik recenter-nél:**
+1. Összes grid order TÖRLÉS
+2. Új grid elhelyezés az aktuális ár körül
+
+---
+
+#### `recenter_interval_seconds` (Alapérték: 300)
+
+**Mit jelent:** Minimum ennyi időnek kell eltelnie két újraközpontosítás között.
+
+**Példa:**
+```
+recenter_interval_seconds = 300
+
+→ Ha 10:00:00-kor volt recenter
+→ Legközelebb 10:05:00 után lehet újra
+→ Még ha a drift elérte is a küszöböt korábban
+```
+
+**Miért fontos:** Megakadályozza a túl gyakori order törlést/újraküldést, ami fee-ket generál.
+
+---
 
 ### 3.3 Kockázatkezelés
 
-| Paraméter | Alapérték | Leírás |
-|-----------|-----------|--------|
-| `breakout_threshold_pct` | 6.0% | Breakout stop küszöb |
-| `trailing_stop_threshold_pct` | 8.0% | Trailing stop a csúcstól |
-| `max_drawdown_pct` | 15.0% | Maximum drawdown limit |
-| `max_long_notional` | 800 | Max long oldali kitettség |
-| `max_short_notional` | 800 | Max short oldali kitettség |
-| `max_total_notional` | 1200 | Max összes kitettség |
+#### `breakout_threshold_pct` (Alapérték: 6.0)
 
-### 3.4 Dinamikus grid
+**Mit jelent:** Ha az ár ennyivel kilép a grid tartományból, MINDEN leáll.
 
-| Paraméter | Alapérték | Leírás |
-|-----------|-----------|--------|
-| `min_grid_levels` | 5 | Minimum grid szintek |
-| `max_grid_levels` | 30 | Maximum grid szintek |
-| `volatility_adapt_offset` | true | ATR alapú offset adaptáció |
-| `enable_dynamic_grid_levels` | true | Dinamikus szint számítás |
+**Példa:**
+```
+breakout_threshold_pct = 8.0
+Grid alsó = 168.30
+Grid felső = 171.70
 
-### 3.5 Technikai indikátorok
+→ Breakout alsó: 168.30 × (1 - 0.08) = 154.84
+→ Breakout felső: 171.70 × (1 + 0.08) = 185.44
 
-| Paraméter | Alapérték | Leírás |
-|-----------|-----------|--------|
-| `atr_period` | 14 | ATR periódus |
-| `sma_fast_period` | 9 | Gyors SMA periódus |
-| `sma_slow_period` | 21 | Lassú SMA periódus |
+→ Ha ár < 154.84 VAGY ár > 185.44:
+  - Összes order TÖRLÉS
+  - Pozíció ZÁRÁS
+  - Grid SZÜNET
+```
 
 ---
 
-## 4. Backtest futtatása
+#### `trailing_stop_threshold_pct` (Alapérték: 8.0)
 
-### 4.1 Adat előkészítés
+**Mit jelent:** Ha az ár visszaesik a session csúcsától ennyivel, MINDEN leáll.
 
-Hozd létre az adat fájlt a `data/grid_data/` mappában:
+**Példa:**
+```
+trailing_stop_threshold_pct = 10.0
+Session legmagasabb ár = 180.00
 
-```bash
-mkdir -p data/grid_data
+→ Trailing stop: 180.00 × (1 - 0.10) = 162.00
+
+→ Ha ár < 162.00:
+  - Összes order TÖRLÉS
+  - Pozíció ZÁRÁS
+  - Grid SZÜNET
 ```
 
-Fájlnév formátum: `{SYMBOL}_{START}_{END}_{TIMEFRAME}.csv`
-
-Példa: `BTCUSDC_20251101_20260221_15m.csv`
-
-CSV formátum:
-```csv
-timestamp,open,high,low,close,volume
-2025-11-01 00:00:00,50000.0,50100.0,49900.0,50050.0,100.5
-2025-11-01 00:15:00,50050.0,50150.0,49950.0,50100.0,95.2
-...
-```
-
-### 4.2 Backtest futtatás
-
-```bash
-cd kebo-trade
-
-# MongoDB nélkül
-MONGODB_ENABLED=false python run/run_backtest_grid.py
-
-# MongoDB-vel
-export MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin"
-MONGODB_ENABLED=true python run/run_backtest_grid.py
-```
-
-### 4.3 Eredmények
-
-A `backtest_results/` mappában:
-- `grid_{timestamp}_orders.csv` - Összes order
-- `grid_{timestamp}_fills.csv` - Fill-ek
-- `grid_{timestamp}_positions.csv` - Pozíciók
-- `grid_{timestamp}_summary.txt` - Összefoglaló
+**Megjegyzés:** `enable_trailing_stop = false` esetén nem aktív!
 
 ---
 
-## 5. Live trading
+#### `max_drawdown_pct` (Alapérték: 15.0)
 
-### 5.1 Környezeti változók
+**Mit jelent:** Ha a számla egyenlege ennyivel csökken a kezdeti értéktől, MINDEN leáll.
 
-```bash
-# .env fájl
-export MONGODB_URI="mongodb://user:pass@host:27017/nautilus?authSource=admin"
-export STRATEGY_ID="grid_strategy_futures_001"
-export BINANCE_API_KEY="your_api_key"
-export BINANCE_API_SECRET="your_api_secret"
-export BINANCE_TESTNET="true"  # vagy "false" ÉLESHEZ
-export SYMBOL="BTCUSDC"
-export LOG_LEVEL="INFO"
+**Példa:**
+```
+max_drawdown_pct = 20.0
+Kezdeti equity = 500 USDC
+
+→ Drawdown limit: 500 × (1 - 0.20) = 400 USDC
+
+→ Ha equity < 400 USDC:
+  - Összes order TÖRLÉS
+  - Pozíció ZÁRÁS
+  - Grid SZÜNET
 ```
 
-### 5.2 Futtatás
+---
 
-```bash
-# Testnet (ajánlott először!)
-source .env
-python run/run_live_grid.py
+#### `max_long_notional` / `max_short_notional` / `max_total_notional`
 
-# Éles (VALÓS PÉNZ!)
-export BINANCE_TESTNET="false"
-python run/run_live_grid.py
+**Mit jelent:** Maximum mekkora pozíció értéket engedélyezünk.
+
+**Példa:**
+```
+max_long_notional = 60
+max_short_notional = 60
+max_total_notional = 100
+
+→ Max LONG pozíció: 60 USDC
+→ Max SHORT pozíció: 60 USDC
+→ Max összes: 100 USDC (ha mindkét irányban van pozíció)
 ```
 
-### 5.3 Leállítás
+**Megjegyzés:** Single position mode-ban egyszerre csak egy irányban van pozíció, szóval a `max_total_notional` ritkán releváns.
 
-`Ctrl+C` - Graceful shutdown:
-- Összes nyitott order törlése
-- Pozíció zárása
-- Állapot mentése MongoDB-be
+---
 
-### 5.4 Docker
+### 3.4 Funkció Kapcsolók
+
+| Paraméter | Alapérték | Mit csinál |
+|-----------|-----------|------------|
+| `volatility_adapt_offset` | true | ATR alapján szélesíti/szűkíti a gridet |
+| `enable_breakout_stop` | true | Breakout védelem aktív |
+| `enable_exposure_limits` | true | Notional limitek aktívak |
+| `enable_trailing_stop` | true | Trailing stop aktív |
+| `enable_max_drawdown` | true | Drawdown védelem aktív |
+| `enable_auto_resume` | true | Szünet után auto újraindítás |
+| `enable_dynamic_grid_levels` | true | Volatilitás alapú level számítás |
+
+---
+
+### 3.5 Dinamikus Grid
+
+#### `min_grid_levels` / `max_grid_levels`
+
+**Mit jelent:** Ha `enable_dynamic_grid_levels = true`, a grid szintek száma automatikusan változik.
+
+**Példa:**
+```
+grid_levels = 5 (alap)
+min_grid_levels = 3
+max_grid_levels = 8
+
+→ Magas volatilitás esetén: 3 level (kevesebb order)
+→ Alacsony volatilitás esetén: 8 level (több order)
+→ Normál esetben: 5 level
+```
+
+---
+
+### 3.6 Indikátorok
+
+| Paraméter | Alapérték | Mit csinál |
+|-----------|-----------|------------|
+| `atr_period` | 14 | ATR számítás periódusa (volatilitás mérés) |
+| `sma_fast_period` | 9 | Gyors mozgóátlag (trend irány) |
+| `sma_slow_period` | 21 | Lassú mozgóátlag (trend irány) |
+
+**Trend érzékelés:**
+```
+Ha SMA(9) > SMA(21) → UPTREND
+Ha SMA(9) < SMA(21) → DOWNTREND
+```
+
+---
+
+## 4. Kockázatkezelés
+
+### 4.1 Összefoglaló Táblázat
+
+| Védelem | Trigger | Mi történik |
+|---------|---------|-------------|
+| Breakout Stop | Ár kilép grid ± X% | Flatten + Pause |
+| Trailing Stop | Ár csúcstól -X% | Flatten + Pause |
+| Max Drawdown | Equity kezdettől -X% | Flatten + Pause |
+| Exposure Limit | Notional > limit | Pause (nincs flatten) |
+
+### 4.2 Auto Resume
+
+Ha `enable_auto_resume = true`:
+- 30 perc szünet után
+- Ha az ár visszatér az eredeti grid tartomány ±5%-ába
+- Automatikusan újraindul a grid
+
+---
+
+## 5. Futtatás
+
+### 5.1 Docker
 
 ```bash
 # docker.env
 MONGODB_URI=mongodb://user:pass@host:27017/nautilus?authSource=admin
-STRATEGY_ID=grid_strategy_futures_001
+STRATEGY_ID=grid_sol_50usdc
 BINANCE_API_KEY=your_key
 BINANCE_API_SECRET=your_secret
-BINANCE_TESTNET=true
-TRADING_MODE=grid
-SYMBOL=BTCUSDC
+BINANCE_ENV=TESTNET
+TRADING_MODE=futures
+STRATEGY_TYPE=grid
+SYMBOL=SOLUSDC
 
-# Futtatás
-docker run --env-file docker.env kebo-trade:grid
+# Indítás
+docker-compose up -d
+
+# Logok
+docker-compose logs -f
+
+# Leállítás (GRACEFUL - törli az ordereket!)
+docker-compose down
 ```
 
----
-
-## 6. Kockázatkezelés
-
-### 6.1 Breakout Stop
-
-Ha az ár a grid tartományból ennyivel kilép:
-
-```
-Lower bound = grid_lower * (1 - breakout_threshold)
-Upper bound = grid_upper * (1 + breakout_threshold)
-
-Ha ár < lower_bound VAGY ár > upper_bound → FLATTEN + PAUSE
-```
-
-### 6.2 Trailing Stop
-
-A legmagasabb ártól visszaesés:
-
-```
-Trail low = highest_price * (1 - trailing_stop_threshold)
-
-Ha ár < trail_low → FLATTEN + PAUSE
-```
-
-### 6.3 Maximum Drawdown
-
-A kezdő equity-től számított maximális veszteség:
-
-```
-Threshold = starting_equity * (1 - max_drawdown_pct)
-
-Ha current_equity < threshold → FLATTEN + PAUSE
-```
-
-### 6.4 Exposure Limits
-
-Maximális kitettség korlátozás:
-
-```
-Long notional < max_long_notional
-Short notional < max_short_notional
-Total notional < max_total_notional
-```
-
-### 6.5 Auto Resume
-
-Pause után automatikus újraindítás ha:
-1. Eltelt a `resume_cooldown_minutes`
-2. Az ár az eredeti grid tartomány ±`resume_price_tolerance_pct` között van
-
----
-
-## 7. Technikai indikátorok
-
-### 7.1 ATR (Average True Range)
-
-A volatilitás mérésére használt indikátor.
-
-```
-True Range = max(
-    high - low,
-    abs(high - prev_close),
-    abs(low - prev_close)
-)
-
-ATR = SMA(True Range, period)
-```
-
-Használat: Grid offset adaptáció
-
-### 7.2 SMA (Simple Moving Average)
-
-Trend irány meghatározása:
-
-```
-SMA_fast (9 periódus)
-SMA_slow (21 periódus)
-
-Ha SMA_fast > SMA_slow → UPTREND
-Ha SMA_fast < SMA_slow → DOWNTREND
-```
-
-### 7.3 Dinamikus Grid Szintek
-
-A grid szintek száma dinamikusan változik:
-
-**Magas volatilitás (>3%)**: Grid szintek csökkennek
-**Alacsony volatilitás (<1%)**: Grid szintek növekednek
-**Erős trend (>4%)**: Grid szintek felezése
-**Közepes trend (>2%)**: Grid szintek 2/3-ra csökkentése
-
----
-
-## 8. MongoDB integráció
-
-### 8.1 Session tracking
-
-Minden indítás új session-t hoz létre. Crash recovery támogatás.
-
-### 8.2 Collections
-
-| Collection | Tartalom |
-|------------|----------|
-| `sessions` | Session tracking |
-| `orders` | Order események |
-| `fills` | Fill események |
-| `positions` | Pozíciók |
-| `balances` | Balance snapshots |
-| `heartbeat` | Heartbeat (állapot) |
-| `errors` | Hibák |
-
-### 8.3 Heartbeat adatok
-
-```json
-{
-  "grid_active": true,
-  "paused_due_to_risk": false,
-  "effective_grid_levels": 15,
-  "current_mid_price": 50000.0,
-  "trend_direction": "UP",
-  "trend_strength": 2.5,
-  "position": {
-    "side": "LONG",
-    "quantity": 0.001
-  },
-  "performance": {
-    "total_trades": 10,
-    "win_rate": 0.7,
-    "total_pnl": 0.005
-  }
-}
-```
-
----
-
-## 9. Példa config
-
-### 9.1 MongoDB config (strategy_configs collection)
-
-```json
-{
-  "strategy_id": "grid_strategy_futures_001",
-  "strategy_type": "grid_strategy",
-  "symbol": "BTCUSDC",
-  "parameters": {
-    "grid_levels": 15,
-    "order_quantity": 0.001,
-    "grid_offset_pct": 8.0,
-    "take_profit_pct": 1.2,
-    "stop_loss_pct": 2.0,
-    "recenter_drift_threshold_pct": 3.0,
-    "recenter_interval_seconds": 300,
-    "breakout_threshold_pct": 6.0,
-    "trailing_stop_threshold_pct": 8.0,
-    "max_drawdown_pct": 15.0,
-    "max_long_notional": 800.0,
-    "max_short_notional": 800.0,
-    "max_total_notional": 1200.0,
-    "volatility_adapt_offset": true,
-    "enable_breakout_stop": true,
-    "enable_exposure_limits": true,
-    "enable_trailing_stop": true,
-    "enable_max_drawdown": true,
-    "enable_auto_resume": true,
-    "enable_dynamic_grid_levels": true,
-    "min_grid_levels": 5,
-    "max_grid_levels": 30,
-    "atr_period": 14,
-    "sma_fast_period": 9,
-    "sma_slow_period": 21
-  }
-}
-```
-
-### 9.2 Config feltöltés
-
-Hozz létre `grid_config.json` fájlt a fenti tartalommal, majd:
+### 5.2 Python
 
 ```bash
-python run/upload_config.py grid_config.json
+source .env
+python run/run_live_grid.py
 ```
 
 ---
 
-## 10. Összehasonlítás: Grid vs Bounce Scalper
+## 6. Példa Konfiguráció
 
-| Jellemző | Grid Strategy | Bounce Scalper |
-|----------|---------------|----------------|
-| **Irány** | LONG + SHORT | LONG only |
-| **Pozíciók** | Single | Multiple per instrument |
-| **Instrumentumok** | Egyetlen | Több |
-| **Piaci feltétel** | Ranging | Mean reversion |
-| **Entry** | Grid szint | EMA-ATR sáv |
-| **TP/SL** | Limit + Stop-Market | Fix százalék |
-| **Kockázatkezelés** | Breakout, trailing, drawdown | Min balance |
+### `grid_sol_50usdc` (MongoDB-ben)
+
+```json
+{
+  "strategy_id": "grid_sol_50usdc",
+  "strategy_type": "grid",
+  "symbol": "SOLUSDC",
+  "parameters": {
+    "order_size_usdc": 10,
+    "grid_levels": 5,
+    "grid_offset_pct": 2,
+    "take_profit_pct": 0.3,
+    "stop_loss_pct": 1.5,
+    "recenter_drift_threshold_pct": 1.5,
+    "recenter_interval_seconds": 300,
+    "breakout_threshold_pct": 8,
+    "trailing_stop_threshold_pct": 10,
+    "max_drawdown_pct": 20,
+    "max_long_notional": 60,
+    "max_short_notional": 60,
+    "max_total_notional": 100,
+    "volatility_adapt_offset": false,
+    "enable_breakout_stop": true,
+    "enable_exposure_limits": true,
+    "enable_trailing_stop": false,
+    "enable_max_drawdown": true,
+    "enable_auto_resume": true,
+    "enable_dynamic_grid_levels": false
+  }
+}
+```
+
+### Mit jelent ez konkrétan?
+
+| Paraméter | Érték | Gyakorlati jelentés |
+|-----------|-------|---------------------|
+| `grid_levels: 5` | 10 order | 5 BUY + 5 SELL |
+| `order_size_usdc: 10` | 10 USDC/order | ~0.059 SOL @ 170 USDC |
+| `grid_offset_pct: 2` | ±1% grid | 168.30 - 171.70 tartomány |
+| `take_profit_pct: 0.3` | +0.3% | ~0.03 USDC profit/trade |
+| `stop_loss_pct: 1.5` | -1.5% | ~0.15 USDC loss/trade |
+| `max exposure` | 50 USDC | 5 × 10 USDC |
 
 ---
 
-## 11. Tippek
+## 7. Mit Fogsz Látni
 
-### 11.1 Paraméter hangolás
+### 7.1 Indításkor
 
-- **Oldalazó piac**: Több grid szint, szűkebb offset
-- **Trending piac**: Kevesebb szint, szélesebb offset
-- **Magas volatilitás**: Automatikus adaptáció (`volatility_adapt_offset: true`)
+```
+========================================
+KEBO TRADE - GRID STRATEGY (FUTURES USDC MARGIN)
+========================================
+Strategy: grid_sol_50usdc
+Symbol: SOLUSDC
+Environment: TESTNET
+Grid levels: 5
+Order size: 10 USDC
 
-### 11.2 Tesztelés
+🚀 STARTING - Grid Strategy Futures USDC Margin
+✅ RUNNING - Grid Strategy
+```
 
-1. Mindig **TESTNET** módban kezdj
-2. Futtass backtest-et különböző időszakokra
-3. Figyeld a drawdown értékeket
-4. Állítsd be a megfelelő position size-t
+### 7.2 Grid Elhelyezés
 
-### 11.3 Élesen
+```
+Grid centered at 170.00 | Range: 168.30 - 171.70 (±1.00%)
+Placed 10 grid orders (effective levels: 5)
+```
 
-- Használj alacsony order quantity-t kezdetben
-- Állíts be szigorú max_drawdown limitet
-- Figyeld a funding rate-eket (Futures)
-- Ne hagyd felügyelet nélkül hosszú ideig
+**Binance-on 10 order jelenik meg.**
+
+### 7.3 Státusz Log (~30 másodpercenként)
+
+```
+[STATE] Price=170.0000 | Position=NONE | Mode=GRID | GridOrders=10 (actual=10) | TP=False SL=False | P&L=0.00
+```
+
+### 7.4 Grid Order Fill
+
+```
+GRID ORDER FILLED: BUY at 169.49 (level 2) → Switching to TP/SL mode
+Cancelled 9 grid orders → switched to TP/SL mode
+Placing TP/SL for BUY position: Entry=169.49, TP=170.00, SL=166.95
+TP/SL mode active: TP at 170.00, SL at 166.95
+```
+
+**Binance-on most 2 order van (TP + SL).**
+
+### 7.5 Take Profit Fill
+
+```
+TAKE PROFIT FILLED at 170.00 → Re-centering grid
+Trade closed with PROFIT: +0.05 USDC
+Placed 10 grid orders (effective levels: 5)
+```
+
+### 7.6 Stop Loss Fill
+
+```
+STOP LOSS TRIGGERED at 166.95 → Re-centering grid
+Trade closed with LOSS: -0.15 USDC
+Placed 10 grid orders (effective levels: 5)
+```
+
+### 7.7 Leállítás
+
+```
+⚠️ Received SIGTERM, initiating graceful shutdown...
+SHUTDOWN - Cancelling ALL orders via Binance API...
+  Successfully cancelled 10 orders via Binance API
+✅ Shutdown complete
+```
+
+---
+
+## 8. Összefoglaló Táblázat
+
+| Fázis | Binance Orderek | Pozíció | Log Kulcsszavak |
+|-------|-----------------|---------|-----------------|
+| Indulás | 0 → 10 | NINCS | "Placed 10 grid orders" |
+| GRID mód | 10 | NINCS | "Mode=GRID" |
+| Fill után | 10 → 2 | VAN | "GRID ORDER FILLED" |
+| TP/SL mód | 2 | VAN | "Mode=TP/SL" |
+| TP fill | 2 → 10 | NINCS | "PROFIT" |
+| SL fill | 2 → 10 | NINCS | "LOSS" |
+| Leállítás | X → 0 | marad | "Successfully cancelled" |

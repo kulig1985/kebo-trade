@@ -65,7 +65,7 @@ async def cancel_all_orders_binance(
     api_key: str,
     api_secret: str,
     symbol: str,
-    is_testnet: bool = True,
+    environment: str = "TESTNET",
 ) -> None:
     """
     Cancel ALL open orders for a symbol using direct Binance API call.
@@ -77,12 +77,17 @@ async def cancel_all_orders_binance(
         api_key: Binance API key
         api_secret: Binance API secret
         symbol: Trading symbol (e.g., "SOLUSDC")
-        is_testnet: Whether to use testnet
+        environment: "TESTNET", "DEMO", or "LIVE"
     """
-    if is_testnet:
+    if environment == "TESTNET":
         base_url = "https://testnet.binancefuture.com"
-    else:
+    elif environment == "DEMO":
+        # Binance DEMO uses the same API as testnet for futures
+        base_url = "https://testnet.binancefuture.com"
+    else:  # LIVE
         base_url = "https://fapi.binance.com"
+
+    print(f"  Using Binance API: {base_url}")
 
     endpoint = "/fapi/v1/allOpenOrders"
     url = f"{base_url}{endpoint}"
@@ -425,7 +430,7 @@ async def main():
         api_key=api_key,
         api_secret=api_secret,
         symbol=symbol,
-        is_testnet=(binance_env == BinanceEnvironment.TESTNET),
+        environment=binance_env.name,
     )
 
     # Get final state
