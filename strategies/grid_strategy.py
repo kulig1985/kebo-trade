@@ -280,7 +280,7 @@ class GridStrategy(BaseStrategy):
         self.log.info("GridStrategy stopping - canceling all orders...")
 
         # Összes order törlése
-        working_orders = self.cache.orders_working(instrument_id=self.instrument_id)
+        working_orders = self.cache.orders_open(instrument_id=self.instrument_id)
         for order in working_orders:
             if order.is_open:
                 self.cancel_order(order)
@@ -684,7 +684,7 @@ class GridStrategy(BaseStrategy):
 
     def _cancel_all_grid_orders(self) -> None:
         """Összes grid order törlése."""
-        working_orders = self.cache.orders_working(instrument_id=self.instrument_id)
+        working_orders = self.cache.orders_open(instrument_id=self.instrument_id)
 
         for order in working_orders:
             if order.is_open and str(order.client_order_id) in self.grid_order_ids:

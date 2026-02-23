@@ -37,7 +37,7 @@ from nautilus_trader.model.enums import (
 from nautilus_trader.model.identifiers import InstrumentId, Symbol, TraderId, Venue
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Currency, Money, Price, Quantity
-from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.persistence.wranglers import BarDataWrangler, QuoteTickDataWrangler
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -228,10 +228,20 @@ def create_instrument(symbol: str, venue: Venue) -> CurrencyPair:
     )
 
 
-def load_bars(
+def load_bars_and_ticks(
     instrument: CurrencyPair, timeframe: str, data_dir: Path
-) -> tuple[BarType, list]:
-    """CSV adatok betöltése és Bar objektumokká alakítása."""
+) -> tuple[BarType, list, list]:
+    """
+    CSV adatok betöltése.
+
+    Returns:
+        bar_type: BarType objektum
+        bars: Bar objektumok listája (technikai indikátorokhoz)
+        ticks: QuoteTick objektumok listája (grid trading-hez)
+
+    A Grid Strategy tick adatokat vár az ár frissítésekhez (on_quote_tick).
+    Backtest-ben szintetikus QuoteTick-eket generálunk a bar OHLC adatokból.
+    """
     symbol_str = str(instrument.id.symbol)
     filename = f"{symbol_str}_{START_DATE}_{END_DATE}_{timeframe}.csv"
     filepath = data_dir / filename
@@ -259,10 +269,20 @@ def load_bars(
         aggregation_source=AggregationSource.EXTERNAL,
     )
 
-    wrangler = BarDataWrangler(bar_type, instrument)
-    bars = wrangler.process(df)
+    # Bars betöltése (technikai indikátorokhoz)
+    bar_wrangler = BarDataWrangler(bar_type, instrument)
+    bars = bar_wrangler.process(df)
 
-    return bar_type, bars
+    # Szintetikus QuoteTick-ek generálása a bar adatokból
+    # A QuoteTickDataWrangler.process_bar_data() metódus 4 ticket generál minden bar-hoz:
+    # Open, High, Low, Close árakon - így a grid megfelelő tick eseményeket kap
+    tick_wrangler = QuoteTickDataWrangler(instrument=instrument)
+    ticks = tick_wrangler.process_bar_data(
+        bid_data=df,  # Ugyanaz az adat bid-hez
+        ask_data=df,  # Ugyanaz az adat ask-hoz (spread nélkül)
+    )
+
+    return bar_type, bars, ticks
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -346,15 +366,20 @@ async def run_backtest_async():
     engine.add_instrument(instrument)
 
     try:
-        bar_type, bars = load_bars(instrument, TIMEFRAME, DATA_DIR)
+        bar_type, bars, ticks = load_bars_and_ticks(instrument, TIMEFRAME, DATA_DIR)
         print(f"   ✓ {TIMEFRAME}: {len(bars):,} bars loaded")
+        print(f"   ✓ Synthetic ticks: {len(ticks):,} quote ticks generated")
     except FileNotFoundError as e:
         print(f"   ✗ {e}")
         print(f"\n   Hozz létre adat fájlt: {DATA_DIR}/{instrument.id.symbol}_{START_DATE}_{END_DATE}_{TIMEFRAME}.csv")
         print("   Formátum: timestamp,open,high,low,close,volume")
         return
 
+    # FONTOS: Mindkét adattípust hozzáadjuk!
+    # - Bars: 15 perces technikai indikátorokhoz (on_bar)
+    # - Ticks: Valós idejű ár események (on_quote_tick) - ugyanúgy mint live-ban
     engine.add_data(bars)
+    engine.add_data(ticks)
 
     # ═══════════════════════════════════════════════════════════════════════
     # STRATEGY CONFIG

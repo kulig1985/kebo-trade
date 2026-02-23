@@ -133,7 +133,6 @@ async def main():
                 api_secret=api_secret,
                 account_type=BinanceAccountType.SPOT,
                 environment=binance_env,
-
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
         },

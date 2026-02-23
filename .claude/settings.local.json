@@ -8,7 +8,12 @@
       "Bash(MONGODB_ENABLED=true python:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "WebFetch(domain:nautilustrader.io)"
+      "WebFetch(domain:nautilustrader.io)",
+      "WebFetch(domain:docs.nautilustrader.io)",
+      "Bash(grep:*)",
+      "Bash(python3:*)",
+      "Bash(tee:*)",
+      "Bash(ls:*)"
     ]
   }
 }
