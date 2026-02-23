@@ -16,11 +16,17 @@ Környezeti változók:
 """
 
 import asyncio
+import hashlib
+import hmac
 import os
 import signal
 import sys
+import time
+import urllib.parse
 from decimal import Decimal
 from pathlib import Path
+
+import aiohttp
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -48,6 +54,140 @@ from persistence.publisher import MongoDBPublisher
 from persistence.sync import MongoDBSyncService
 from strategies.grid_strategy import GridStrategy
 from strategies.grid_strategy_config import GridStrategyConfig
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BINANCE API - Direct cancel all orders (bypass NautilusTrader)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+async def cancel_all_orders_binance(
+    api_key: str,
+    api_secret: str,
+    symbol: str,
+    is_testnet: bool = True,
+) -> None:
+    """
+    Cancel ALL open orders for a symbol using direct Binance API call.
+
+    This is more reliable than using NautilusTrader during shutdown because
+    it doesn't depend on the trading node being in a working state.
+
+    Args:
+        api_key: Binance API key
+        api_secret: Binance API secret
+        symbol: Trading symbol (e.g., "SOLUSDC")
+        is_testnet: Whether to use testnet
+    """
+    if is_testnet:
+        base_url = "https://testnet.binancefuture.com"
+    else:
+        base_url = "https://fapi.binance.com"
+
+    endpoint = "/fapi/v1/allOpenOrders"
+    url = f"{base_url}{endpoint}"
+
+    # Create signature
+    timestamp = int(time.time() * 1000)
+    query_string = f"symbol={symbol}&timestamp={timestamp}"
+    signature = hmac.new(
+        api_secret.encode("utf-8"),
+        query_string.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    headers = {"X-MBX-APIKEY": api_key}
+    params = {"symbol": symbol, "timestamp": timestamp, "signature": signature}
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            # First, get open orders to show what we're cancelling
+            get_endpoint = "/fapi/v1/openOrders"
+            get_url = f"{base_url}{get_endpoint}"
+            get_query = f"symbol={symbol}&timestamp={timestamp}"
+            get_signature = hmac.new(
+                api_secret.encode("utf-8"),
+                get_query.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+
+            async with session.get(
+                get_url,
+                headers=headers,
+                params={"symbol": symbol, "timestamp": timestamp, "signature": get_signature},
+            ) as resp:
+                if resp.status == 200:
+                    orders = await resp.json()
+                    if orders:
+                        print(f"  Found {len(orders)} open orders to cancel:")
+                        for order in orders:
+                            print(f"    - {order.get('orderId')}: {order.get('side')} {order.get('origQty')} @ {order.get('price') or order.get('stopPrice', 'MARKET')}")
+                    else:
+                        print("  No open orders found.")
+                        return
+
+            # Cancel all orders with DELETE request
+            async with session.delete(url, headers=headers, params=params) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    print(f"  Successfully cancelled {len(result)} orders via Binance API")
+                else:
+                    error = await resp.text()
+                    print(f"  Binance API error: {resp.status} - {error}")
+
+                    # If batch cancel failed, try individual cancels
+                    if orders:
+                        print("  Trying individual order cancellation...")
+                        for order in orders:
+                            await cancel_single_order_binance(
+                                session, base_url, api_key, api_secret,
+                                symbol, order.get("orderId"),
+                            )
+
+    except Exception as e:
+        print(f"  Error cancelling orders via Binance API: {e}")
+
+
+async def cancel_single_order_binance(
+    session: aiohttp.ClientSession,
+    base_url: str,
+    api_key: str,
+    api_secret: str,
+    symbol: str,
+    order_id: int,
+) -> bool:
+    """Cancel a single order via Binance API."""
+    endpoint = "/fapi/v1/order"
+    url = f"{base_url}{endpoint}"
+
+    timestamp = int(time.time() * 1000)
+    query_string = f"symbol={symbol}&orderId={order_id}&timestamp={timestamp}"
+    signature = hmac.new(
+        api_secret.encode("utf-8"),
+        query_string.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    headers = {"X-MBX-APIKEY": api_key}
+    params = {
+        "symbol": symbol,
+        "orderId": order_id,
+        "timestamp": timestamp,
+        "signature": signature,
+    }
+
+    try:
+        async with session.delete(url, headers=headers, params=params) as resp:
+            if resp.status == 200:
+                print(f"    Cancelled order {order_id}")
+                return True
+            else:
+                error = await resp.text()
+                print(f"    Failed to cancel {order_id}: {error}")
+                return False
+    except Exception as e:
+        print(f"    Error cancelling {order_id}: {e}")
+        return False
 
 
 async def main():
@@ -242,15 +382,20 @@ async def main():
     shutdown_event = asyncio.Event()
     shutdown_reason = "NORMAL"
 
-    def handle_shutdown(sig, frame):
+    def handle_shutdown(sig_name: str):
         nonlocal shutdown_reason
-        print(f"\n⚠️ Received signal {sig}, initiating graceful shutdown...")
-        shutdown_reason = f"SIGNAL_{sig}"
+        print(f"\n⚠️ Received {sig_name}, initiating graceful shutdown...")
+        shutdown_reason = sig_name
         shutdown_event.set()
 
-    # Register signal handlers
-    signal.signal(signal.SIGINT, handle_shutdown)
-    signal.signal(signal.SIGTERM, handle_shutdown)
+    # Register signal handlers using asyncio (works properly in async context)
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, handle_shutdown, sig.name)
+        except NotImplementedError:
+            # Windows doesn't support add_signal_handler
+            signal.signal(sig, lambda s, f: handle_shutdown(signal.Signals(s).name))
 
     print("\n" + "=" * 60)
     print("🚀 STARTING - Grid Strategy Futures USDC Margin")
@@ -268,34 +413,20 @@ async def main():
         shutdown_reason = "CANCELLED"
 
     # ═══════════════════════════════════════════════════════════════════════
-    # SHUTDOWN - CRITICAL: Cancel all orders before stopping
+    # SHUTDOWN - CRITICAL: Cancel all orders using direct Binance API
     # ═══════════════════════════════════════════════════════════════════════
 
     print("\n" + "-" * 60)
-    print("SHUTDOWN - Cancelling all orders...")
+    print("SHUTDOWN - Cancelling ALL orders via Binance API...")
 
-    # FONTOS: Explicit order törlés MIELŐTT bármit leállítanánk
-    # Ez biztosítja, hogy az orderek törlődnek még ha a stratégia on_stop() nem is fut le
-    try:
-        # Cancel all open orders for the instrument
-        working_orders = node.cache.orders_open(instrument_id=instrument_id)
-        cancelled_count = 0
-        for order in working_orders:
-            if order.is_open:
-                try:
-                    strategy.cancel_order(order)
-                    cancelled_count += 1
-                    print(f"  Cancelled: {order.client_order_id}")
-                except Exception as e:
-                    print(f"  Failed to cancel {order.client_order_id}: {e}")
-
-        print(f"Cancelled {cancelled_count} orders")
-
-        # Kis várakozás, hogy a cancel kérések elmenjenek
-        await asyncio.sleep(1)
-
-    except Exception as e:
-        print(f"Error during order cancellation: {e}")
+    # FONTOS: Közvetlen Binance API hívás - ez MINDIG működik!
+    # A NautilusTrader cancel nem megbízható shutdown alatt.
+    await cancel_all_orders_binance(
+        api_key=api_key,
+        api_secret=api_secret,
+        symbol=symbol,
+        is_testnet=(binance_env == BinanceEnvironment.TESTNET),
+    )
 
     # Get final state
     state_snapshot = strategy.on_save() if hasattr(strategy, "on_save") else {}

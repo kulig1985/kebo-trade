@@ -28,10 +28,13 @@ RUN groupadd -g 1001 trader && useradd -u 1001 -g trader -m trader
 
 WORKDIR /app
 
-# tini for proper signal handling in Docker
+# tini for proper signal handling + tzdata for timezone sync
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 ca-certificates tini \
+    libssl3 ca-certificates tini tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# Set timezone to UTC for Binance API compatibility
+ENV TZ=UTC
 
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin

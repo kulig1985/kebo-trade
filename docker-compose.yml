@@ -48,6 +48,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
 
+    # Időszinkronizáció a host géppel (Binance API timestamp validációhoz)
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+
     logging:
       driver: json-file
       options:
