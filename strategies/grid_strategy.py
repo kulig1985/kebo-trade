@@ -128,7 +128,8 @@ class GridStrategy(BaseStrategy):
         """
         super().__init__(config)
 
-        self.config: GridStrategyConfig = config
+        # NautilusTrader-ben a self.config read-only, ezért _grid_config néven tároljuk
+        self._grid_config: GridStrategyConfig = config
         self.instrument_id = config.instrument_id
         self.instrument: Instrument | None = None
 

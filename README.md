@@ -41,7 +41,8 @@ pip install -r requirements.txt
 | `BINANCE_API_KEY` | **IGEN** (live) | - | Binance API key |
 | `BINANCE_API_SECRET` | **IGEN** (live) | - | Binance API secret |
 | `BINANCE_ENV` | nem | `TESTNET` | `TESTNET`, `DEMO`, vagy `LIVE` |
-| `TRADING_MODE` | nem | `spot` | `spot`, `futures`, vagy `grid` |
+| `TRADING_MODE` | nem | `spot` | `spot` vagy `futures` |
+| `STRATEGY_TYPE` | nem | `bounce_scalper` | `bounce_scalper` vagy `grid` |
 | `SYMBOL` | nem (grid) | `BTCUSDC` | Grid Strategy symbol |
 | `WEBHOOK_URL` | nem | - | Backend notification URL |
 | `WEBHOOK_SECRET` | nem | - | Webhook hitelesítő kulcs |

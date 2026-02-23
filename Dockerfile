@@ -40,17 +40,25 @@ USER trader
 
 ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
 
-# Trading mode: spot, futures, grid
-# - spot: Bounce Scalper - Binance SPOT
-# - futures: Bounce Scalper - Binance Futures USDC Margin
-# - grid: Grid Strategy - Binance Futures USDC Margin
+# TRADING_MODE: spot vagy futures (Binance account type)
+# STRATEGY_TYPE: bounce_scalper vagy grid (stratégia típus)
+#
+# Kombinációk:
+#   spot    + bounce_scalper → Bounce Scalper SPOT
+#   futures + bounce_scalper → Bounce Scalper Futures USDC Margin
+#   futures + grid           → Grid Strategy Futures USDC Margin
+#
+# FONTOS: Grid Strategy CSAK futures módban működik!
 ENV TRADING_MODE=spot
+ENV STRATEGY_TYPE=bounce_scalper
 
 CMD ["sh", "-c", "\
-    if [ \"$TRADING_MODE\" = 'grid' ]; then \
-        python run/run_live_grid.py; \
-    elif [ \"$TRADING_MODE\" = 'futures' ]; then \
-        python run/run_live_futures.py; \
+    if [ \"$TRADING_MODE\" = 'futures' ]; then \
+        if [ \"$STRATEGY_TYPE\" = 'grid' ] || [ \"$STRATEGY_TYPE\" = 'grid_strategy' ]; then \
+            python run/run_live_grid.py; \
+        else \
+            python run/run_live_futures.py; \
+        fi; \
     else \
         python run/run_live.py; \
     fi \
