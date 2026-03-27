@@ -43,8 +43,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from persistence.config import MongoDBConfig
 from persistence.publisher import MongoDBPublisher
-from strategies.grid_strategy import GridStrategy
-from strategies.grid_strategy_config import GridStrategyConfig
+from strategies.grid import GridStrategy
+from strategies.grid.config import GridStrategyConfig
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -19,12 +19,12 @@ echo "========================================"
 if [ "$TRADING_MODE" = "futures" ]; then
     if [ "$STRATEGY_TYPE" = "grid" ] || [ "$STRATEGY_TYPE" = "grid_strategy" ]; then
         echo "Starting: Grid Strategy (Futures USDC Margin)"
-        exec python run/run_live_grid.py
+        exec python -m strategies.grid.run_live
     else
         echo "Starting: Bounce Scalper (Futures USDC Margin)"
-        exec python run/run_live_futures.py
+        exec python -m strategies.bounce_scalper.run_live_futures
     fi
 else
     echo "Starting: Bounce Scalper (Spot)"
-    exec python run/run_live.py
+    exec python -m strategies.bounce_scalper.run_live_spot
 fi

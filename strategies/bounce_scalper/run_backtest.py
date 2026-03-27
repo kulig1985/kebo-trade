@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from persistence.config import MongoDBConfig
 from persistence.publisher import MongoDBPublisher
 from strategies.bounce_scalper import BounceScalper
-from strategies.bounce_scalper_config import BounceScalperConfig
+from strategies.bounce_scalper.config import BounceScalperConfig
 
 
 # ============================================================================

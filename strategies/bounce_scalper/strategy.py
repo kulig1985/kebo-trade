@@ -26,8 +26,8 @@ from nautilus_trader.model.events import PositionClosed, PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Currency
 
-from strategies.base_strategy import BaseStrategy
-from strategies.bounce_scalper_config import BounceScalperConfig
+from strategies.base import BaseStrategy
+from strategies.bounce_scalper.config import BounceScalperConfig
 
 
 class BounceScalper(BaseStrategy):

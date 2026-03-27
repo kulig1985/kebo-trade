@@ -29,8 +29,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price, Quantity
 
-from strategies.base_strategy import BaseStrategy
-from strategies.grid_strategy_config import GridStrategyConfig
+from strategies.base import BaseStrategy
+from strategies.grid.config import GridStrategyConfig
 
 if TYPE_CHECKING:
     pass

@@ -52,8 +52,8 @@ from persistence.config import MongoDBConfig
 from persistence.config_loader import load_strategy_config
 from persistence.publisher import MongoDBPublisher
 from persistence.sync import MongoDBSyncService
-from strategies.grid_strategy import GridStrategy
-from strategies.grid_strategy_config import GridStrategyConfig
+from strategies.grid import GridStrategy
+from strategies.grid.config import GridStrategyConfig
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

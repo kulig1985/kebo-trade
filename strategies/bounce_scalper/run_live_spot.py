@@ -1,13 +1,17 @@
 """
-Live Trading Runner - Binance FUTURES (USDC Margin)
-====================================================
+Live Trading Runner
+===================
 
 Futtatás:
-    MONGODB_URI="mongodb://..." python run/run_live_futures.py
+    # Python
+    MONGODB_URI="mongodb://..." python run/run_live.py
+
+    # Docker
+    docker run -e MONGODB_URI="mongodb://..." kebo-trade
 
 Környezeti változók:
     MONGODB_URI         - MongoDB connection string (KÖTELEZŐ)
-    STRATEGY_ID         - Stratégia azonosító (default: bounce_scalper_futures_001)
+    STRATEGY_ID         - Stratégia azonosító (default: bounce_scalper_live_001)
     BINANCE_API_KEY     - Binance API key (KÖTELEZŐ)
     BINANCE_API_SECRET  - Binance API secret (KÖTELEZŐ)
     BINANCE_TESTNET     - "true"/"false" (default: true)
@@ -37,30 +41,30 @@ from persistence.config_loader import load_strategy_config
 from persistence.publisher import MongoDBPublisher
 from persistence.sync import MongoDBSyncService
 from strategies.bounce_scalper import BounceScalper
-from strategies.bounce_scalper_config import BounceScalperConfig
+from strategies.bounce_scalper.config import BounceScalperConfig
 
 
 async def main():
-    """Live trading főprogram - Futures USDC Margin."""
+    """Live trading főprogram."""
     print("=" * 60)
-    print("KEBO TRADE - FUTURES (USDC MARGIN)")
+    print("KEBO TRADE - LIVE")
     print("=" * 60)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # MONGODB CONFIG
+    # KONFIGURÁCIÓ
     # ═══════════════════════════════════════════════════════════════════════════
 
+    # MongoDB
     mongo_config = MongoDBConfig()
-    if mongo_config.enabled and not mongo_config.connection_string:
-        print("❌ MONGODB_URI not set!")
+    if not mongo_config.connection_string:
+        print("❌ MONGODB_URI environment variable not set!")
+        print("   export MONGODB_URI='mongodb://user:pass@host:27017/db'")
         return
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # STRATEGY CONFIG (from MongoDB or defaults)
-    # ═══════════════════════════════════════════════════════════════════════════
+    # Strategy ID
+    strategy_id = os.environ.get("STRATEGY_ID", "bounce_scalper_live_001")
 
-    strategy_id = os.environ.get("STRATEGY_ID", "bounce_scalper_futures_001")
-
+    # Config betöltése (MongoDB-ből vagy default)
     try:
         config_data = load_strategy_config(strategy_id, mongo_config)
     except ValueError as e:
@@ -68,9 +72,7 @@ async def main():
         return
 
     strategy_type = config_data.get("strategy_type", "bounce_scalper")
-
-    # Futures symbols - USDC perpetual pairs
-    symbols = config_data.get("symbols", ["BTCUSDC", "ETHUSDC"])
+    symbols = config_data.get("symbols", ["BTCUSDC"])
     params = config_data.get("parameters", {})
 
     # Binance API
@@ -96,7 +98,6 @@ async def main():
     print(f"\nStrategy: {strategy_id}")
     print(f"Symbols: {', '.join(symbols)}")
     print(f"Environment: {binance_env.name}")
-    print(f"Account Type: USDC MARGIN (Futures)")
     print(f"Trade size: {params.get('trade_size_usdc', 5)} USDC")
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -114,7 +115,7 @@ async def main():
     sync_service = MongoDBSyncService(db=publisher.db)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # TRADING NODE - FUTURES
+    # TRADING NODE
     # ═══════════════════════════════════════════════════════════════════════════
 
     log_level = os.environ.get("LOG_LEVEL", "INFO")
@@ -130,7 +131,7 @@ async def main():
             "BINANCE": BinanceDataClientConfig(
                 api_key=api_key,
                 api_secret=api_secret,
-                account_type=BinanceAccountType.USDT_FUTURES,  # USD-M Futures (works with USDC too)
+                account_type=BinanceAccountType.SPOT,
                 environment=binance_env,
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
@@ -139,8 +140,10 @@ async def main():
             "BINANCE": BinanceExecClientConfig(
                 api_key=api_key,
                 api_secret=api_secret,
-                account_type=BinanceAccountType.USDT_FUTURES,  # USD-M Futures
+                account_type=BinanceAccountType.SPOT,
                 environment=binance_env,
+                base_url_ws="wss://ws-api.testnet.binance.vision/ws-api/v3",  # WS API
+                base_url_ws_stream="wss://stream.testnet.binance.vision/ws",  # user data
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
         },
@@ -151,9 +154,9 @@ async def main():
     node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
     node.build()
 
-    # Instruments - Futures perpetual format
+    # Instruments
     instrument_ids = frozenset([
-        InstrumentId.from_str(f"{symbol}-PERP.BINANCE")
+        InstrumentId.from_str(f"{symbol}.BINANCE")
         for symbol in symbols
     ])
 
@@ -174,18 +177,16 @@ async def main():
         max_positions_per_instrument=params.get("max_positions_per_instrument", 1),
         ema_period=params.get("ema_period", 20),
         atr_period=params.get("atr_period", 14),
-        entry_atr_multiplier=params.get("entry_atr_multiplier", 0.8),
-        exit_atr_multiplier=params.get("exit_atr_multiplier"),
+        entry_atr_multiplier=Decimal(str(params.get("entry_atr_multiplier", 0.8))),
         take_profit_pct=Decimal(str(params.get("take_profit_pct", 1.0))),
         stop_loss_pct=Decimal(str(params.get("stop_loss_pct", 1.5))),
-        min_free_balance_usdc=Decimal(str(params.get("min_free_balance_usdc", 20))),
+        exit_atr_multiplier=Decimal(str(params["exit_atr_multiplier"])) if params.get("exit_atr_multiplier") else None,
+        min_free_balance_usdc=Decimal(str(params.get("min_free_balance_usdc", 10))),
         cooldown_ticks=params.get("cooldown_ticks", 10),
     )
 
-    # Create strategy
     strategy = BounceScalper(config=strategy_config)
     strategy.set_persistence(publisher)
-
     node.trader.add_strategy(strategy)
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -209,48 +210,24 @@ async def main():
 
     shutdown_event = asyncio.Event()
 
-    def handle_shutdown(sig, frame):
-        print(f"\n⚠️ Received {sig}, shutting down...")
+    def handle_signal(sig, frame):
+        print(f"\nShutdown signal received...")
         shutdown_event.set()
 
-    signal.signal(signal.SIGINT, handle_shutdown)
-    signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
 
-    print("\n" + "=" * 60)
-    print("🚀 STARTING - Futures USDC Margin")
-    print("=" * 60)
-
-    # Start node in background thread (blocking call)
+    print("\n🚀 Starting trading node...")
     node_task = asyncio.create_task(asyncio.to_thread(node.run))
-
-    print("✅ RUNNING - Futures USDC Margin")
-    print("Press Ctrl+C to stop")
 
     try:
         await shutdown_event.wait()
-    except asyncio.CancelledError:
-        pass
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SHUTDOWN
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    print("\n" + "-" * 60)
-    print("SHUTDOWN")
-
-    # Get final state
-    state_snapshot = strategy.on_save() if hasattr(strategy, "on_save") else {}
-
-    # Stop publisher
-    await publisher.stop(reason="NORMAL", state_snapshot=state_snapshot)
-
-    # Stop node
-    node.stop()
-    await asyncio.sleep(2)
-    node.dispose()
-
-    print("✅ Shutdown complete")
-    print("-" * 60)
+    finally:
+        print("\nShutting down...")
+        node.stop()
+        await publisher.stop(reason="NORMAL", state_snapshot=strategy.on_save())
+        node.dispose()
+        print("Done.")
 
 
 if __name__ == "__main__":
